@@ -1,0 +1,7 @@
+[repetition]
+@desc=Record all positions 'repetition_count' times.
+      Between each repetition a minimum of 'repetition_time_delta' seconds must pass.
+      If the recording takes more time, 'repetition_time_delta' can be exceeded.
+
+repetition_count = 1000  #min:1
+repetition_time_delta = 0.0  #unit:s
