@@ -13,6 +13,7 @@ setup(name='leica_microscope',
             "tifffile",
             "lucam",
             "configparser",
+            "qscintilla",
       ],
       include_package_data=True,
       zip_safe=False)

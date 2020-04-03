@@ -15,4 +15,6 @@ def getConfig(defaults):
         else:
             execfile(config_file, globals(), defaults)
 
+    defaults["filename"] = config_file
+
     return defaults

@@ -4,10 +4,10 @@
 record_modes = [Mode_Current()] #type:mode, desc:"Specify the recoding modes with exposure time and gain"
 #start_index = 0
 #use_current_z = False
-binning = 1 #min:1, max=8, desc:"Bin pixels. Allowed values: 1, 2, 4, 8 for 1x1, 2x2, 4x4 and 8x8 binning"
-roi = 1024 #max:1024, min:8, unit:"pixel height"
-wait_before_image = 0.0 #min:0, unit:"s", desc:"When a position is reached the recording waits the specified amount of seconds."
-continuous_sequence = False # desc:"If True, the camera records continously during the whole measurement time and only the necessary images are saved. If False the camera only makes an image when the image hast to be saved."
+#binning = 1 #min:1, max=8, desc:"Bin pixels. Allowed values: 1, 2, 4, 8 for 1x1, 2x2, 4x4 and 8x8 binning"
+#roi = 1024 #max:1024, min:8, unit:"pixel height"
+#wait_before_image = 0.0 #min:0, unit:"s", desc:"When a position is reached the recording waits the specified amount of seconds."
+#continuous_sequence = False # desc:"If True, the camera records continously during the whole measurement time and only the necessary images are saved. If False the camera only makes an image when the image hast to be saved."
 
 [files]
 @desc=Specify the positions file and the folder to save to.
@@ -29,7 +29,7 @@ countX = 1  #min:1
 countY = 1  #min:1
 overlap = 0.15
 
-change_mode_single_image = True #desc:"Change mode for every single position.\nIf false change mode after grid recording."
+#change_mode_single_image = True #desc:"Change mode for every single position.\nIf false change mode after grid recording."
 
 [stack]
 @desc=Record a z-stack at every position.
@@ -49,7 +49,7 @@ projection = False #desc:"Calculate a max/min projection instead of recoding a z
 
 repetition_count = 1  #min:1
 repetition_time_delta = 0.0  #unit:s
-repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."
+#repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."
 
 #[calls]
 #call_before_repetition = ""

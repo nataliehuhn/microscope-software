@@ -5,9 +5,10 @@ import time
 import shutil
 import numpy as np
 import json
+import datetime
 from pathlib import Path
 
-from leica_microscope.helper_functions import getConfig, getModes, modesToDictList, formatDict
+from leica_microscope.helper_functions import getConfig, getModes, modesToDictList, formatDict, print_with_border
 
 config, timestamp = getConfig()
 
@@ -25,6 +26,8 @@ def output(str):
         print("    "*indent + line.strip())
         with output_file.open("a") as fp:
             fp.write("    "*indent + line.strip()+"\n")
+
+print_with_border("generate code")
 
 output(f"""
 import numpy as np
@@ -122,4 +125,8 @@ else:
 # change to the target folder
 os.chdir(output_file.parent)
 # and execute the new script
+start_time = datetime.datetime.now()
+print_with_border("start measurement")
 os.system("python " + output_file.name + " --timestamp=" + timestamp)
+print_with_border("measurement finished")
+print(f"duration {datetime.datetime.now()-start_time}")

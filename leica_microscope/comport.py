@@ -80,7 +80,16 @@ def serial_ports():
             pass
     return result
 
-def find_mic_port():
+def find_mic_port(port):
+    if port is not None:
+        with Connection(port) as s:
+            line = s.readline()
+            s.write("70080\r")
+            line = s.readline()
+        if line.startswith("70080") and int(line[5:]) == 1: #TODO
+            #print("Found leica_microscope")
+            return port
+
     ports = serial_ports()
     for port in ports:
         #print("Trying port", port)
@@ -139,7 +148,7 @@ class IdError(MicroscopeError):
 class ComError(MicroscopeError):
     pass
 
-def send_command_and_wait(command_list, port, output_format=None, verbose=False):
+def send_command_and_wait(command_list, port, output_format=None, verbose=False, wait=True):
     single_command = False
 
     if not isinstance(command_list, (list, tuple)):
@@ -171,6 +180,8 @@ def send_command_and_wait(command_list, port, output_format=None, verbose=False)
         # write the command to the port
         for command in command_list:
             ser.write(command)
+        if wait is False:
+            return
         # remember start time
         start_time = time.time()
         while time.time() - start_time < 5:
@@ -197,7 +208,10 @@ def send_command_and_wait(command_list, port, output_format=None, verbose=False)
                         raise FuiError(
                             f"FUI_ERR occurred for command {line}", device, error, cmd, parameters)
                 for i in range(len(command_list)):
-                    if device == command_codes[i][0] and cmd == command_codes[i][2]:
+                    if device == command_codes[i][0] and cmd == command_codes[i][2] \
+                            and ((device != "76" or cmd != "33") or (device == "76" and cmd == "33" and (line[6:9] == command_list[i][6:9] or (command_list[i][6] == "a" and line[8] == command_list[i][8]))))\
+                            and ((device != "78" or cmd != "27") or (device == "78" and cmd == "27" and line[6:7] == command_list[i][6:7]))\
+                            :
                         if error != "0":
                             if error == "1":
                                 raise ParError(f"PAR_ERR: wrong parameters supplied for command {command_list[i]}", device, error, cmd, parameters)

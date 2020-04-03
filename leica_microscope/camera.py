@@ -60,6 +60,17 @@ class Camera:
 
     """ properties """
 
+    def roi(self):
+        frameformat, framerate = self.lucam.GetFormat()
+        return [frameformat.xOffset, frameformat.yOffset, frameformat.width, frameformat.height]
+
+    def setROI(self, x, y, w, h):
+        frameformat, framerate = self.lucam.GetFormat()
+        self.lucam.SetFormat(
+            Lucam.FrameFormat(x, y, w, h, API.LUCAM_PF_16,
+                              binningX=frameformat.binningX, flagsX=1, binningY=frameformat.binningY, flagsY=1),
+            framerate=1000.0)
+
     def exposure(self) -> float:
         return self.lucam.GetProperty('exposure')[0]
 

@@ -5,6 +5,7 @@ import glob
 import time
 import socket
 import numpy as np
+import re
 from pathlib import Path
 import tifffile
 from typing import Tuple
@@ -26,7 +27,29 @@ class Nowait:
         self.mic.wait = True
 
     def __call__(self, *args, **kwargs):
-        pass
+        return self
+
+
+class Timeit:
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        self.time = time.time()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print("TIMEIT", self.name, time.time()-self.time)
+
+
+def writeConfigChange(config, name, value):
+    with open(config["filename"], "r") as fp:
+        text = fp.read()
+    if re.match(name+r"\s*=[^\n]*", text) is not None:
+        text = re.sub(name+r"\s*=[^\n]*", name + " = " + value, text)
+    else:
+        text += "\n"+name+" = "+value
+    with open(config["filename"], "w") as fp:
+        fp.write(text)
 
 
 class Microscope:
@@ -55,48 +78,127 @@ class Microscope:
     iteration_time = None
 
     def __init__(self):
-        self.port = find_mic_port()
-        self.cam = Camera()
-
         self.config = getConfig(dict(MicroscopePort=9998,
                                      MicroscopeName="Mic",
                                      Coupler=1,
                                      speed_percentage=1.0,
                                      InvertAxisY=False,
                                      InvertAxisX=False,
-                                     ZSpeedFactor=0.1))
+                                     ZSpeedFactor=0.1,
+                                     Port=None))
+
+        self.port = find_mic_port(self.config["Port"])
+        writeConfigChange(self.config, "Port", '"'+self.port+'"')
+
+        self.cam = Camera()
 
         self.wait = True
         self.nowait = Nowait(self)
         self.verbose = False
 
-        self.magnification = self.getMagnification()
-        self.numerical_aperture = self.getNumericalAperture()
-        self.objective = self.getObjective()
-        self.mode, self.channel = self.getMode()
-        return
+        self.properties = self.getAllProperties()
         self.magnification, self.numerical_aperture, self.objective, self.mode, self.channel = \
-            self.send_command_and_wait([
-                "76033 a 1",
-                "76033 a 2",
-                "76033 a 3",
-                "70028",
-                "78023",
-            ],
-                [
-                    [None, None, int],
-                    [None, None, float],
-                    [None, None, int],
-                    int,
-                    [None, str],
-                ])
+                self.send_command_and_wait([
+                    "76033 a 1",
+                    "76033 a 2",
+                    "76033 a 3",
+                    "70028",
+                    "78023",
+                ],
+                    [
+                        [None, None, int],
+                        [None, None, float],
+                        [None, None, int],
+                        int,
+                        [None, str],
+                    ])
+
+    def mode_id_to_name(self, id):
+        for k, v in self.mode_ids.items():
+            if v == id:
+                return k
 
     def send_command_and_wait(self, command, format=None):
         # if we don't want to wait and we do not expect a return value, just send the command
-        if self.wait is False and format is False:
-            return send_command(command, self.port)
-        # if not, send the command and wait for it
-        return send_command_and_wait(command, self.port, format, verbose=self.verbose)
+        # if not, send the command and wait for the answer
+        wait = self.wait is True or format is not None
+        return send_command_and_wait(command, self.port, format, verbose=self.verbose, wait=wait)
+
+    def wait_for_stop(self, function, timeout=5):
+        start_time = time.time()
+        while self.wait and np.any(function()) and time.time() - start_time < timeout:
+            time.sleep(0.0001)
+
+    def getAllProperties(self):
+        commands = []
+        formats = []
+        names = []
+        def addCommand(cmd, format, name):
+            commands.append(cmd)
+            formats.append(format)
+            names.append(name)
+
+        # objectives
+        for i in range(6):
+            addCommand("76033 %d 1" % (i+1), [None, None, str], "objectives")
+        addCommand("76023", [int], "current_objective")
+        # filters
+        for i in range(6):
+            addCommand("78027 %d" % (i+1), [None, str], "filters")
+        addCommand("78023", [int], "current_filter")
+        # possible modes
+        addCommand("70026", [str], "modes")
+        # mode
+        addCommand("70028", [int], "current_mode")
+        # lamp
+        addCommand("77021", [int], "intensity")
+        # aperture
+        addCommand("84023", [int], "aperture")
+        # field
+        addCommand("94023", [int], "field")
+        # shutter
+        addCommand("77033", [int, int], "shutter")
+        # position
+        addCommand("72023", [int], "pos")
+        addCommand("73023", [int], "pos")
+        addCommand("71023", [int], "pos")
+        # speed
+        addCommand("72033", [int], "speed")
+        addCommand("73033", [int], "speed")
+        addCommand("71033", [int], "speed")
+        # ramp
+        addCommand("72031", [int], "ramp")
+        addCommand("73031", [int], "ramp")
+        addCommand("71031", [int], "ramp")
+        # resolution
+        addCommand("72034", [float], "resolution")
+        addCommand("73034", [float], "resolution")
+        addCommand("71042", [float], "resolution")
+        # get the answer to all these commands
+        result = self.send_command_and_wait(commands, formats)
+        propertes = {}
+        for v, n in zip(result, names):
+            if n not in propertes:
+                propertes[n] = v
+            else:
+                if isinstance(propertes[n], list):
+                    propertes[n].append(v)
+                else:
+                    propertes[n] = [propertes[n], v]
+
+        # the modes response is a string with 0's and 1's corresponding which modes are enabled
+        all_modes = propertes["modes"]
+        propertes["modes"] = []
+        # we here convert it to a list of names
+        for i, m in enumerate(all_modes[::-1]):
+            if m == "1":
+                for k, v in self.mode_ids.items():
+                    if v == i:
+                        propertes["modes"].append(k)
+                        break
+
+        self.properties = propertes
+        return propertes
 
     """ helpers """
 
@@ -133,9 +235,20 @@ class Microscope:
             print("FlowError occurred, try to reinit", err.device)
             self.send_command_and_wait(err.device+"020")
             self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
+        # wait until the microscope has truly reached the position
+        self.wait_for_stop(self.getMoving)
 
-    def getMoving(self):
-        return np.array([res[0] for res in self.send_command_and_wait(["72004", "73004", "71004"], [int, int, int])])
+    def getMoving(self) -> np.array:
+        return np.array(self.send_command_and_wait(["72004", "73004", "71004"], [int, int, int])).astype(bool)
+
+    def getXMoving(self) -> bool:
+        return self.send_command_and_wait("72004", int) == 1
+
+    def getYMoving(self) -> bool:
+        return self.send_command_and_wait("73004", int) == 1
+
+    def getZMoving(self) -> bool:
+        return self.send_command_and_wait("71004", int) == 1
 
     def getXPos(self):
         return self.send_command_and_wait("72023", int)
@@ -147,6 +260,8 @@ class Microscope:
             # in case a flow error occurs, maybe a reset can help
             self.send_command_and_wait("71020")
             self.send_command_and_wait("72022 %d" % x)
+        # wait until the microscope has truly reached the position
+        self.wait_for_stop(self.getXMoving)
 
     def getYPos(self):
         return self.send_command_and_wait("73023", int)
@@ -158,6 +273,8 @@ class Microscope:
             # in case a flow error occurs, maybe a reset can help
             self.send_command_and_wait("71020")
             self.send_command_and_wait("73022 %d" % y)
+        # wait until the microscope has truly reached the position
+        self.wait_for_stop(self.getYMoving)
 
     def getZPos(self):
         return self.send_command_and_wait("71023", int)
@@ -169,6 +286,8 @@ class Microscope:
             # in case a flow error occurs, maybe a reset can help
             self.send_command_and_wait("71020")
             self.send_command_and_wait("71022 %d" % z)
+        # wait until the microscope has truly reached the position
+        self.wait_for_stop(self.getZMoving)
 
     """ speed adjustments """
 
@@ -221,11 +340,17 @@ class Microscope:
 
     """ main microscope """
 
-    def getLamp(self) -> int:
+    def getLampIntensity(self) -> int:
         return self.send_command_and_wait("77021", int)
 
-    def setLamp(self, intensity: int):
+    def setLampIntensity(self, intensity: int):
         self.send_command_and_wait("77020 %d" % intensity)
+
+    def setApertureTL(self, intensity: int):
+        self.send_command_and_wait("84022 %d" % intensity)
+
+    def setFieldTL(self, intensity: int):
+        self.send_command_and_wait("94022 %d" % intensity)
 
     def getMode(self) -> Tuple[int, Tuple[int, str]]:
         return self.send_command_and_wait(["70028", "78023"], [int, [int, str]])
@@ -257,7 +382,7 @@ class Microscope:
         return self.send_command_and_wait("76033 a 1", [None, None, int])
 
     def getObjectiveIndex(self):
-        return self.send_command_and_wait("76023", [None, None, int])
+        return self.send_command_and_wait("76023", int)
 
     def getNumericalAperture(self):
         return self.send_command_and_wait("76033 a 2", [None, None, float])
@@ -275,6 +400,10 @@ class Microscope:
 
     def getCoupler(self):
         return self.config["Coupler"]
+
+    def setCoupler(self, value):
+        self.config["Coupler"] = value
+        writeConfigChange(self.config, "Couple", "%.1f" % value)
 
     def getMicroscopeName(self):
         return self.config["MicroscopeName"]
@@ -322,7 +451,7 @@ class Microscope:
         if mode is not None:
             self.setMode(mode)
         if intensity is not None:
-            self.setLamp(intensity)
+            self.setLampIntensity(intensity)
         """ camera properties """
         if exposure is not None:
             self.cam.setExposure(exposure)
