@@ -52,11 +52,18 @@ class Camera:
         self.lucam.StreamVideoControl('start_streaming')  # streaming without display
         self.lucam.TakeVideo(None, out=buffer)
         self.lucam.StreamVideoControl('stop_streaming')
+        if self.config["flip_y"]:
+            buffer[:] = buffer[::-1]
+        return buffer
 
     def getImage(self):
         if self.fast_enabled is True:
-            return self.lucam.TakeFastFrame()
-        return self.lucam.TakeSnapshot()
+            im = self.lucam.TakeFastFrame()
+        else:
+            im = self.lucam.TakeSnapshot()
+        if self.config["flip_y"]:
+            im = im[::-1]
+        return im
 
     """ properties """
 

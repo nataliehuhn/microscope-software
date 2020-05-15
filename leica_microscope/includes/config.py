@@ -2,7 +2,7 @@ import sys
 import os
 import re
 
-config_file = os.path.join(os.path.dirname(__file__), "..", "Microscope_Config.txt")
+config_file = os.path.join(os.path.dirname(__file__), "..", "microscope_config.txt")
 
 
 def getConfig(defaults={}):

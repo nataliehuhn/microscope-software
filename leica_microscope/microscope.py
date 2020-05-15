@@ -64,14 +64,9 @@ class Microscope:
     iteration_time = None
 
     def __init__(self):
-        self.config = getConfig(dict(MicroscopePort=9998,
-                                     MicroscopeName="Mic",
-                                     Coupler=1,
-                                     speed_percentage=1.0,
-                                     InvertAxisY=False,
-                                     InvertAxisX=False,
-                                     ZSpeedFactor=0.1,
-                                     Port=None))
+        self.config = getConfig(dict(microscope_name="Mic",
+                                     coupler=1,
+                                     port=None))
 
         self.port = find_mic_port(self.config["port"])
         writeConfigChange(self.config, "port", '"'+self.port+'"')
@@ -382,21 +377,21 @@ class Microscope:
     """"""
 
     def getEffectiveMagnification(self):
-        return self.getMagnification() * self.config["Coupler"]
+        return self.getMagnification() * self.config["coupler"]
 
     def getCoupler(self):
-        return self.config["Coupler"]
+        return self.config["coupler"]
 
     def setCoupler(self, value):
-        self.config["Coupler"] = value
-        writeConfigChange(self.config, "Couple", "%.1f" % value)
+        self.config["coupler"] = value
+        writeConfigChange(self.config, "coupler", "%.1f" % value)
 
     def getMicroscopeName(self):
-        return self.config["MicroscopeName"]
+        return self.config["microscope_name"]
 
     def getMetadata(self):
         self.metadata = {}
-        self.metadata["Coupler"] = float(self.config["Coupler"])
+        self.metadata["Coupler"] = float(self.config["coupler"])
 
         self.metadata["Mode"] = self.mode
         self.metadata["Channel"] = self.channel
@@ -410,7 +405,7 @@ class Microscope:
 
         # System
         self.metadata["ComputerName"] = socket.gethostname()
-        self.metadata["MicroscopeName"] = self.config["MicroscopeName"]
+        self.metadata["MicroscopeName"] = self.config["microscope_name"]
         self.metadata["Time"] = time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-%06d" % (
                     (time.time() - int(time.time())) * 1e6)
         return self.metadata

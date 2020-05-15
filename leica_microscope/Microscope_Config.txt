@@ -1,6 +1,0 @@
-MicroscopeName = "Mic3"
-PixelSize = 6.45 # 4.0954 # um
-Coupler = 1.0
-FlipY = False
-camera = "lumenera"
-port = "COM10"

@@ -22,7 +22,7 @@ class Camera:
     fast_enabled = False
 
     def __init__(self):
-        self.config = getConfig(dict(PixelSize=4.0954))
+        self.config = getConfig(dict())
         self.mmap = MemMap(self.config["memmap"])
 
     def resetFormat(self):
@@ -39,9 +39,15 @@ class Camera:
         buffer[0] = self.getNewestImage()
         for i in range(1, buffer.shape[0]):
             buffer[1] = self.getNextImage()
+        if self.config["flip_y"]:
+            buffer[:] = buffer[::-1]
+        return buffer
 
     def getImage(self):
-        return self.getNextImage()
+        im = self.getNextImage()
+        if self.config["flip_y"]:
+            im = im[::-1]
+        return im
 
     """ properties """
 
@@ -91,12 +97,12 @@ class Camera:
 
     def getPixelSize(self) -> float:
         """ returns the pixel size of the camera (defined by the config.txt) """
-        return self.config["PixelSize"]
+        return self.config["pixel_size"]
 
     def getMetadata(self):
         """ return the meta data for the current image """
         metadata = dict(Exposure=str(self.exposure()), Gain=str(self.gain()),
-                        PixelSize=self.config["PixelSize"] * self.binning(),
+                        PixelSize=self.config["pixel_size"] * self.binning(),
                         BitDepth=self.lucam.GetTruePixelDepth())
         return metadata
 
