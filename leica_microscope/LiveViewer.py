@@ -28,9 +28,7 @@ from qimage2ndarray import array2qimage
 
 import time
 import numpy as np
-import subprocess
-import psutil
-from leica_microscope.matplotlibwidget import MatplotlibWidget
+from leica_microscope.includes.matplotlibwidget import MatplotlibWidget
 import matplotlib.pyplot as plt
 
 
@@ -64,7 +62,7 @@ positions_file = os.path.join(output_path, "Positions_tmp.txt")
 #gain_values_file = os.path.join(output_path, "LiveViewer_GainValues.txt")
 #positions_file = os.path.join(output_path, "Positions_tmp.txt")
 from leica_microscope import Microscope
-from leica_microscope.QExtendedGraphicsView import QExtendedGraphicsView
+from leica_microscope.includes.QExtendedGraphicsView import QExtendedGraphicsView
 
 
 class QInput(QtWidgets.QWidget):

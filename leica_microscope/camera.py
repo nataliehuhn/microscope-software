@@ -1,4 +1,4 @@
-from leica_microscope.config import getConfig
+from leica_microscope.includes.config import getConfig
 import importlib
 
 

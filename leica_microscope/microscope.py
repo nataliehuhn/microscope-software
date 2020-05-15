@@ -1,19 +1,16 @@
 from __future__ import print_function, division
-import serial
 import sys
-import glob
 import time
 import socket
 import numpy as np
-import re
 from pathlib import Path
 import tifffile
 from typing import Tuple
 
-from leica_microscope.comport import Connection, find_mic_port, send_command_and_wait, send_command, FlowError
+from leica_microscope.includes.comport import find_mic_port, send_command_and_wait, FlowError
 from leica_microscope.camera_lumenera import Camera
-from leica_microscope.config import getConfig
-from leica_microscope.helper_functions import format_partial, format_with_default
+from leica_microscope.includes.config import getConfig, writeConfigChange
+from leica_microscope.includes.helper_functions import format_partial, format_with_default
 
 
 class Nowait:
@@ -39,17 +36,6 @@ class Timeit:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("TIMEIT", self.name, time.time()-self.time)
-
-
-def writeConfigChange(config, name, value):
-    with open(config["filename"], "r") as fp:
-        text = fp.read()
-    if re.match(name+r"\s*=[^\n]*", text) is not None:
-        text = re.sub(name+r"\s*=[^\n]*", name + " = " + value, text)
-    else:
-        text += "\n"+name+" = "+value
-    with open(config["filename"], "w") as fp:
-        fp.write(text)
 
 
 class Microscope:
@@ -87,8 +73,8 @@ class Microscope:
                                      ZSpeedFactor=0.1,
                                      Port=None))
 
-        self.port = find_mic_port(self.config["Port"])
-        writeConfigChange(self.config, "Port", '"'+self.port+'"')
+        self.port = find_mic_port(self.config["port"])
+        writeConfigChange(self.config, "port", '"'+self.port+'"')
 
         self.cam = Camera()
 

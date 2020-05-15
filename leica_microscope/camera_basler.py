@@ -2,8 +2,7 @@ from pypylon import pylon
 from pypylon import genicam
 import numpy as np
 
-from leica_microscope.includes.MemMap import MemMap
-from leica_microscope.config import getConfig
+from leica_microscope.includes.config import getConfig
 
 class Fast:
     def __init__(self, cam, lucam):

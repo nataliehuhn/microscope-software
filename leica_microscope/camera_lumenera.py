@@ -1,7 +1,7 @@
 from lucam import Lucam, API
 import numpy as np
 
-from leica_microscope.config import getConfig
+from leica_microscope.includes.config import getConfig
 
 class Fast:
     def __init__(self, cam, lucam):
