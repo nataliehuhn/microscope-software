@@ -82,27 +82,29 @@ def serial_ports():
 
 def find_mic_port(port):
     if port is not None:
-        with Connection(port) as s:
-            line = s.readline()
-            s.write("70080\r")
-            line = s.readline()
-        if line.startswith("70080") and int(line[5:]) == 1: #TODO
-            #print("Found leica_microscope")
-            return port
+        try:
+            with Connection(port) as s:
+                line = s.readline()
+                s.write("70080\r")
+                line = s.readline()
+            if line.startswith("70080") and int(line[5:]) == 1: #TODO
+                #print("Found leica_microscope")
+                return port
+        except serial.serialutil.SerialException:
+            pass
 
     ports = serial_ports()
+    print("Serial ports", serial_ports())
     for port in ports:
-        #print("Trying port", port)
+        print("Trying port", port)
         with Connection(port) as s:
             line = s.readline()
             s.write("70080\r")
             line = s.readline()
         if line.startswith("70080") and int(line[5:]) == 1: #TODO
-            #print("Found leica_microscope")
             return port
         else:
             pass
-            #print("response:", line)
     return None
 
 

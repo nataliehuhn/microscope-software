@@ -38,6 +38,10 @@ class Timeit:
         print("TIMEIT", self.name, time.time()-self.time)
 
 
+class NoMicroscopeFound(Exception):
+    pass
+
+
 class Microscope:
     MODE_TL_BF = 0
     MODE_TL_PH = 1
@@ -69,6 +73,8 @@ class Microscope:
                                      port=None))
 
         self.port = find_mic_port(self.config["port"])
+        if self.port is None:
+            raise NoMicroscopeFound("No microscope was found, check if the microscope is running.")
         writeConfigChange(self.config, "port", '"'+self.port+'"')
 
         self.cam = Camera()
