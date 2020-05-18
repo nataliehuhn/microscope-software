@@ -34,14 +34,16 @@ class Camera:
     """ recording """
 
     def getVideoBuffer(self, count) -> np.ndarray:
-        height, width = self.mmap.rbf[0].image.shape
+        height, width, channels = self.mmap.rbf[0].image.shape
         format = self.mmap.rbf[0].image.dtype
         return np.zeros([count, height, width], dtype=format)
 
     def getVideo(self, buffer):
-        buffer[0], timestamp = self.getNewestImage()
+        im, timestamp = self.getNewestImage()
+        buffer[0] = im[:, :, 0]
         for i in range(1, buffer.shape[0]):
-            buffer[1], timestamp = self.getNextImage()
+            im, timestamp = self.getNextImage()
+            buffer[i] = im[:, :, 0]
         if self.config["flip_y"]:
             buffer[:] = buffer[::-1]
         return buffer
@@ -51,6 +53,7 @@ class Camera:
         while im is None:
             im, timestamp = self.getNextImage()
             time.sleep(0.01)
+        im = im[:, :, 0]
         if self.config["flip_y"]:
             im = im[::-1]
         return im
@@ -58,7 +61,7 @@ class Camera:
     """ properties """
 
     def roi(self):
-        height, width = self.mmap.rbf[0].image.shape
+        height, width, channels = self.mmap.rbf[0].image.shape
         return [0, 0, width, height]
 
     def setROI(self, x, y, w, h):
@@ -77,7 +80,7 @@ class Camera:
         print("WARNING: memmap cannot reset the gain")
 
     def binning(self) -> int:
-        return None
+        return 1
 
     def setBinning(self, binning: int):
         print("WARNING: memmap cannot reset the binning")
