@@ -7,8 +7,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 from FlowLayout import FlowLayout
 try:
     from PyQt5 import Qsci
+    qsci_loaded = True
 except ImportError:
-    from PyQt4 import Qsci
+    try:
+        from PyQt4 import Qsci
+        qsci_loaded = True
+    except ImportError:
+        qsci_loaded = False
 
 try:
     import ConfigParser  # Py2
@@ -400,8 +405,12 @@ class ConfigEditor(QtWidgets.QWidget):
                 box.resizeEvent = lambda event, button2=button2, box=box: button2.move(box.width()-button2.width(), 0)
                 button2.setToolTip(tooltip)
 
-        self.Scintilla = Qsci.QsciScintilla()
-        self.Scintilla.setLexer(Qsci.QsciLexerPython(self))
+        if qsci_loaded:
+            self.Scintilla = Qsci.QsciScintilla()
+            self.Scintilla.setLexer(Qsci.QsciLexerPython(self))
+        else:
+            self.Scintilla = QtWidgets.QTextEdit()
+            self.Scintilla.text = self.Scintilla.toPlainText
         self.Scintilla.setMinimumWidth(400)
 
         self.no_update = False
@@ -477,7 +486,7 @@ class ConfigEditor(QtWidgets.QWidget):
             if options.program:
                 os.system(sys.executable + " " + options.program + " " + options.config)
         else:
-            path = QtGui.QFileDialog.getSaveFileName(self, "Open File")
+            path = QtWidgets.QFileDialog.getSaveFileName(self, "Open File")
             if isinstance(path, tuple):
                 path = str(path[0])
             else:

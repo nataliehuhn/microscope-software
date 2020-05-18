@@ -8,7 +8,7 @@ import tifffile
 from typing import Tuple
 
 from leica_microscope.includes.comport import find_mic_port, send_command_and_wait, FlowError
-from leica_microscope.camera_lumenera import Camera
+from leica_microscope.camera import Camera
 from leica_microscope.includes.config import getConfig, writeConfigChange
 from leica_microscope.includes.helper_functions import format_partial, format_with_default
 

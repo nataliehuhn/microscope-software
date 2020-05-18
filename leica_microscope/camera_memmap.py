@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 from leica_microscope.includes.MemMap import MemMap
 from leica_microscope.includes.config import getConfig
@@ -25,6 +26,8 @@ class Camera:
         self.config = getConfig(dict())
         self.mmap = MemMap(self.config["memmap"])
 
+        self.getNewestImage()
+
     def resetFormat(self):
         print("WARNING: memmap cannot reset the format")
 
@@ -36,15 +39,18 @@ class Camera:
         return np.zeros([count, height, width], dtype=format)
 
     def getVideo(self, buffer):
-        buffer[0] = self.getNewestImage()
+        buffer[0], timestamp = self.getNewestImage()
         for i in range(1, buffer.shape[0]):
-            buffer[1] = self.getNextImage()
+            buffer[1], timestamp = self.getNextImage()
         if self.config["flip_y"]:
             buffer[:] = buffer[::-1]
         return buffer
 
     def getImage(self):
-        im = self.getNextImage()
+        im, timestamp = self.getNextImage()
+        while im is None:
+            im, timestamp = self.getNextImage()
+            time.sleep(0.01)
         if self.config["flip_y"]:
             im = im[::-1]
         return im
@@ -80,11 +86,11 @@ class Camera:
         return None
 
     def getWidth(self) -> int:
-        height, width = self.mmap.rbf[0].image.shape
+        height, width, channels = self.mmap.rbf[0].image.shape
         return width
 
     def getHeight(self) -> int:
-        height, width = self.mmap.rbf[0].image.shape
+        height, width, channels = self.mmap.rbf[0].image.shape
         return height
 
     def getMaxValue(self) -> int:
@@ -103,7 +109,7 @@ class Camera:
         """ return the meta data for the current image """
         metadata = dict(Exposure=str(self.exposure()), Gain=str(self.gain()),
                         PixelSize=self.config["pixel_size"] * self.binning(),
-                        BitDepth=self.lucam.GetTruePixelDepth())
+                        BitDepth=self.getMaxValue())
         return metadata
 
     def getNewestImage(self):

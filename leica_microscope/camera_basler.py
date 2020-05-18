@@ -5,7 +5,7 @@ import numpy as np
 from leica_microscope.includes.config import getConfig
 
 class Fast:
-    def __init__(self, cam, lucam):
+    def __init__(self):
         pass
 
     def __enter__(self):
@@ -46,7 +46,7 @@ class Camera:
         # camera.AcquisitionFrameRate = 500
         self.camera.ExposureTime = 30
 
-        self.fast_recording = Fast(self, self.lucam)
+        self.fast_recording = Fast()
         self.fast_enabled = False
 
     def resetFormat(self):
@@ -69,7 +69,7 @@ class Camera:
                 buffer[i] = im
 
     def getImage(self):
-        im = self.camera.GrabOne(100)
+        im = self.camera.GrabOne(100).Array
         if self.config["flip_y"]:
             im = im[::-1]
         return im
@@ -83,7 +83,7 @@ class Camera:
         print("WARNING: roi is currently not supported")
 
     def exposure(self) -> float:
-        return self.camera.ExposureTime
+        return self.camera.ExposureTime()
 
     def setExposure(self, exposure: float):
         self.camera.ExposureTime = exposure
@@ -95,7 +95,7 @@ class Camera:
         print("WARNING: gain is automatically adjusted")
 
     def binning(self) -> int:
-        return None
+        return 1
 
     def setBinning(self, binning: int):
         print("WARNING: binning is currently not supported")
@@ -104,16 +104,16 @@ class Camera:
         return self.camera.AcquisitionFrameRate
 
     def getWidth(self) -> int:
-        return self.camera.Width
+        return self.camera.Width()
 
     def getHeight(self) -> int:
-        return self.camera.Height
+        return self.camera.Height()
 
     def getMaxValue(self) -> int:
-        return np.iinfo(np.uint16).max
+        return np.iinfo(np.uint8).max
 
     def getDtype(self):
-        return np.uint16
+        return np.uint8
 
     """ meta data """
 
@@ -125,5 +125,5 @@ class Camera:
         """ return the meta data for the current image """
         metadata = dict(Exposure=str(self.exposure()), Gain=str(self.gain()),
                         PixelSize=self.config["pixel_size"] * self.binning(),
-                        BitDepth=self.lucam.GetTruePixelDepth())
+                        BitDepth=self.getMaxValue())
         return metadata

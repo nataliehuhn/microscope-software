@@ -26,7 +26,7 @@ print_with_border("generate code")
 
 output(f"""
 import numpy as np
-from leica_microscope.helper_functions import format_partial, bar
+from leica_microscope.includes.helper_functions import format_partial, bar
 from leica_microscope.microscope import Microscope
 
 # initialize the microscope connection

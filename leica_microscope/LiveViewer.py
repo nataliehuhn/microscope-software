@@ -186,7 +186,8 @@ class QInputNumber(QInput):
         else:
             self.spin_box.setMaximum(+99999)
 
-        self.setValue(value)
+        if value is not None:
+            self.setValue(value)
 
     def _setSliderDragged(self, value):
         self.slider_dragged = value
@@ -799,7 +800,7 @@ class ModuleROI(QtWidgets.QGroupBox):
 
 class ModuleHistogram(QtWidgets.QGroupBox):
 
-    def __init__(self, parent, layout, bitDepth):
+    def __init__(self, parent, layout, max_value):
         QtWidgets.QWidget.__init__(self)
         self.parent = parent
         layout.addWidget(self)
@@ -807,20 +808,20 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         self.setLayout(self.layout)
         self.setMaximumHeight(100)
 
-        self.bitDepth = bitDepth
+        self.max_value = max_value
 
         self.plot = MatplotlibWidget()
         self.plot.figure.patch.set_facecolor([0, 1, 0, 0])
         ax = self.plot.figure.add_axes([0, 0, 1, 1])
         self.plot.setMinimumHeight(50)
         self.plot.setMaximumHeight(50)
-        self.plot_line, = self.plot.figure.gca().plot(np.arange(0, 2 ** self.bitDepth + 20, 20), np.arange(0, 2 ** self.bitDepth + 20, 20))
+        self.plot_line, = self.plot.figure.gca().plot(np.arange(0, max_value + 20, 20), np.arange(0, max_value + 20, 20))
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         ax.spines['left'].set_visible(False)
         ax.set_yticks([])
         ax.set_xticks([])
-        ax.set_xlim(0, 2 ** bitDepth + 20)
+        ax.set_xlim(0, max_value + 20)
         self.layout.addWidget(self.plot)
 
         self.label = QtWidgets.QLabel()
@@ -832,7 +833,7 @@ class ModuleHistogram(QtWidgets.QGroupBox):
     def updateStatus(self):
         max = self.parent.im_max
         #print(max, self.bitDepth, 2**self.bitDepth, f"{self.parent.im[0,0]:016b}")
-        self.setTitle("Histogram %3.1f%% (%d)" % (100 * max / (2 ** self.bitDepth), max))
+        self.setTitle("Histogram %3.1f%% (%d)" % (100 * max / self.max_value, max))
         self.plot_line.set_data(self.parent.im_bins[:-1], self.parent.im_hist)
         self.label.setText("Overexposed: %d%%" % int(self.parent.im_hist[-2]*1000))
         self.plot.figure.gca().set_ylim(0, self.parent.im_hist[:-2].max()*1.05)
@@ -1010,7 +1011,7 @@ class Window(QtWidgets.QWidget):
         ModuleCoupler(self, right_layout)
         ModuleExposure(self, right_layout)
         ModuleROI(self, right_layout)
-        ModuleHistogram(self, right_layout, self.mic.cam.lucam.GetTruePixelDepth())
+        ModuleHistogram(self, right_layout, self.mic.cam.getMaxValue())
         #ModuleSnap(self, right_layout)
         #ModuleProperties(self, right_layout)
         right_layout.addStretch()

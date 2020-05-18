@@ -1,47 +1,55 @@
 from __future__ import division, print_function
 import sys, os
-from PyQt4 import QtGui, Qsci
+from qtpy import QtGui, QtWidgets
+try:
+    from PyQt5 import Qsci
+    qsci_loaded = True
+except ImportError:
+    qsci_loaded = False
 
 config_config = "ConfigLoader_"
 do_start = False
 
-class Window(QtGui.QWidget):
+class Window(QtWidgets.QWidget):
     def __init__(self, filename, programm_basename):
-        super(QtGui.QWidget, self).__init__()
+        super(QtWidgets.QWidget, self).__init__()
         self.setWindowTitle(programm_basename+" Config Editor")
 
-        self.layout = QtGui.QVBoxLayout()
+        self.layout = QtWidgets.QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.layout)
                 
-        self.layout_buttons = QtGui.QHBoxLayout()
+        self.layout_buttons = QtWidgets.QHBoxLayout()
         self.layout_buttons.setContentsMargins(5, 5, 5, 0)
         self.layout.addLayout(self.layout_buttons)
         
-        self.button_load = QtGui.QPushButton('L&oad', self)
+        self.button_load = QtWidgets.QPushButton('L&oad', self)
         self.button_load.pressed.connect(self.load)
         self.layout_buttons.addWidget(self.button_load)
 
-        self.button_save = QtGui.QPushButton('Sa&ve as', self)
+        self.button_save = QtWidgets.QPushButton('Sa&ve as', self)
         self.button_save.pressed.connect(self.saveAs)
         self.layout_buttons.addWidget(self.button_save)         
         
-        self.button_cancel = QtGui.QPushButton('C&ancel', self)
+        self.button_cancel = QtWidgets.QPushButton('C&ancel', self)
         self.button_cancel.pressed.connect(self.close)
         self.layout_buttons.addWidget(self.button_cancel)    
         
         self.layout_buttons.addStretch()
         
-        self.button_start = QtGui.QPushButton('S&ave and Start', self)
+        self.button_start = QtWidgets.QPushButton('S&ave and Start', self)
         self.button_start.pressed.connect(self.SaveNStart)
         self.layout_buttons.addWidget(self.button_start)
         
-        self.filename_label = QtGui.QLabel("  "+filename)
+        self.filename_label = QtWidgets.QLabel("  "+filename)
         self.layout.addWidget(self.filename_label)        
         
         self.filename = filename
-        self.Scintilla = Qsci.QsciScintilla()
-        self.Scintilla.setLexer(Qsci.QsciLexerPython(self))
+        if qsci_loaded:
+            self.Scintilla = Qsci.QsciScintilla()
+            self.Scintilla.setLexer(Qsci.QsciLexerPython(self))
+        else:
+            self.Scintilla = QtWidgets.QTextEdit()
         self.Scintilla.setText(open(os.path.abspath(self.filename)).read())
         self.Scintilla.textChanged.connect(self.text_changed)
         self.changed = False
@@ -56,12 +64,12 @@ class Window(QtGui.QWidget):
         self.close()
     
     def saveAs(self):
-        self.filename = QtGui.QFileDialog.getSaveFileName(None,"Save Config","")
+        self.filename = QtWidgets.QFileDialog.getSaveFileName(None,"Save Config","")
         self.filename_label.setText("  "+self.filename)
         self.save()
 
     def load(self):
-        self.filename = QtGui.QFileDialog.getOpenFileName(None,"Choose Config","")
+        self.filename = QtWidgets.QFileDialog.getOpenFileName(None,"Choose Config","")
         self.filename_label.setText("  "+self.filename)
         self.Scintilla.setText(open(os.path.abspath(self.filename)).read())
 
@@ -70,8 +78,8 @@ class Window(QtGui.QWidget):
 
     def closeEvent(self, event):
         if self.changed == True:
-            reply = QtGui.QMessageBox.question(self, 'Message',
-                "File has been changed. Do you want to save?", QtGui.QMessageBox.Yes, QtGui.QMessageBox.No, QtGui.QMessageBox.Cancel)
+            reply = QtWidgets.QMessageBox.question(self, 'Message',
+                "File has been changed. Do you want to save?", QtWidgets.QMessageBox.Yes, QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Cancel)
             if reply == QtGui.QMessageBox.Yes:
                 self.save()
             elif reply == QtGui.QMessageBox.Cancel:
@@ -87,7 +95,7 @@ class Window(QtGui.QWidget):
         self.changed = False
 
 if __name__ == '__main__':
-    app = QtGui.QApplication(sys.argv)
+    app = QtWidgets.QApplication(sys.argv)
     programm_path, programm_name = os.path.split(sys.argv[1])
     programm_basename, programm_ext = os.path.splitext(programm_name)
     if len(sys.argv) >= 3:
@@ -104,7 +112,7 @@ if __name__ == '__main__':
     elif default_config:
         config = default_config
     if config == "" or not os.path.isfile(config):
-        config = QtGui.QFileDialog.getOpenFileName(None, "Choose Config", "")
+        config = QtWidgets.QFileDialog.getOpenFileName(None, "Choose Config", "")
     if not os.path.isfile(config):
         sys.exit(-1)
     print(config)

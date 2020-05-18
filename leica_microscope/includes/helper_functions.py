@@ -316,7 +316,7 @@ def getConfig():
     print(config_filename)
     # overwrite defaults with personal cfg if available
     if os.path.exists(config_filename):
-        config = Config(config_filename, os.path.join(os.path.dirname(__file__), "ConfigCreator", "Config_Default.txt"))
+        config = Config(config_filename, os.path.join(os.path.dirname(__file__), "..", "ConfigCreator", "Config_Default.txt"))
     else:
         print("ERROR: no config file found.")
         sys.exit(-1)
