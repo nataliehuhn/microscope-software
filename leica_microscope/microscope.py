@@ -493,7 +493,7 @@ class Microscope:
         return self.rec_stack(filename, n_below, n_above, slice_thickness_um, fast_recording, save_projection)
 
     def recordPreciseStackToBuffer(self, z, z_start, z_stop, n_slices):
-        slice_thickness_steps = (z_start-z_stop) // n_slices
+        slice_thickness_steps = (z_stop-z_start) // n_slices
         # prepare the video buffer (a numpy array the size to hold all images)
         buffer = self.cam.getVideoBuffer(n_slices)
 
