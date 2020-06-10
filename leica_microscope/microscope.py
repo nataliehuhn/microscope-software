@@ -484,10 +484,13 @@ class Microscope:
                 self.saveImage(format_with_default(filename, z=i), buffer[i])
         else:
             # save projection
+            dtype = np.uint8
+            if n_slices > 256:
+                dtype = np.uint16
             self.saveImage(format_with_default(filename, z='MinProj'), np.min(buffer, axis=0))
             self.saveImage(format_with_default(filename, z='MaxProj'), np.max(buffer, axis=0))
-            self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0))
-            self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0))
+            self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype))
+            self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype))
 
     def rec_projection(self, filename, n_below=50, n_above=250, slice_thickness_um=5, fast_recording=True, save_projection=True):
         return self.rec_stack(filename, n_below, n_above, slice_thickness_um, fast_recording, save_projection)

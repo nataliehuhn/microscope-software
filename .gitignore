@@ -126,3 +126,5 @@ dmypy.json
 
 # Pycharm
 .idea/
+leica_microscope/ConfigCreator/temp_config.txt
+leica_microscope/temp_config.txt

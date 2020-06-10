@@ -49,7 +49,7 @@ projection = False #desc:"Calculate a max/min projection instead of recoding a z
 
 repetition_count = 1  #min:1
 repetition_time_delta = 0.0  #unit:s
-#repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."
+repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."
 
 #[calls]
 #call_before_repetition = ""

@@ -1076,7 +1076,7 @@ class Window(QtWidgets.QWidget):
             #self.UpdateExposureTime()
 
         if 1:
-            self.mic.cam.fast_recording.__enter__()
+            #self.mic.cam.fast_recording.__enter__()
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self.updateview)
             self.timer.start(100)
@@ -1131,6 +1131,7 @@ class Window(QtWidgets.QWidget):
             self.del_position(self.current_position)
             
         # @key ---- Microscope ----
+        """
         if not self.blocked:
             if event.key() == QtCore.Qt.Key_0:
                 # @key 0: change to brightfield
@@ -1159,6 +1160,7 @@ class Window(QtWidgets.QWidget):
             if event.key() == 223:
                 # @key ss: change to phase contrast
                 mic.setShutter(not mic.memmap.shutter)
+        """
 
 
     def showImage(self):

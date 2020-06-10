@@ -223,7 +223,7 @@ class Mode:
     def to_dict(self):
         data = {}
         if self.name != "":
-            data["mode"] = name
+            data["mode"] = self.name
         if self.exp is not None:
             data["exposure"] = self.exp
         if self.gain is not None:
@@ -302,10 +302,16 @@ def modesToDictList(config_modes):
     for mode in getModes(config_modes):
         if mode.startswith("Mode_"):
             mode = eval(mode).to_dict()
+        mode["mode"] = '"'+mode["mode"]+'"'
         modes.append(mode)
     return modes
 
 def formatDict(dict):
+    def to_string(v):
+        if isinstance(v, str):
+            return '"'+v+'"'
+        return str(v)
+
     return ", ".join(k+"="+str(v) for k, v in dict.items())
 
 def getConfig():

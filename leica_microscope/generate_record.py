@@ -63,6 +63,15 @@ if config.grid.countx > 1 or config.grid.county > 1:
     """)
 
 properties = {}
+
+if config.repetition.repeat_positions_separately is True and config.files.positions_filename != None:
+    output("")
+    output("# iterate over positions")
+    output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
+    indent += 1
+    output("mic.setPos(pos)")
+    properties["pos"] = "pos_index"
+
 if config.repetition.repetition_count > 1:
     output("")
     output("# iterate over repetitions")
@@ -71,7 +80,7 @@ if config.repetition.repetition_count > 1:
     output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
     properties["repetition"] = "rep"
 
-if config.files.positions_filename != None:
+if config.repetition.repeat_positions_separately is not True and config.files.positions_filename != None:
     output("")
     output("# iterate over positions")
     output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")

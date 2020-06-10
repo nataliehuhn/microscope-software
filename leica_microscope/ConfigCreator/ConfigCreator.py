@@ -21,6 +21,12 @@ except ImportError:
     import configparser as ConfigParser  # Py3
 import json
 
+""" some magic to prevent PyQt5 from swallowing exceptions """
+# Back up the reference to the exceptionhook
+sys._excepthook = sys.excepthook
+# Set the exception hook to our wrapping function
+sys.excepthook = lambda *args: sys._excepthook(*args)
+
 icon_path = os.path.join(os.path.dirname(__file__), "..", "icons")
 output_path = os.path.join(os.getenv('APPDATA'), "Microscope")
 if not os.path.exists(output_path):
@@ -431,12 +437,24 @@ class ConfigEditor(QtWidgets.QWidget):
         self.move((DRect.width()-WRect.width())/2, (DRect.height()-WRect.height())/4)
 
     def LoadConfig(self, path, editor_update=True):
+        in_group = False
+        with open("temp_config.txt", "w") as fp2:
+            with open(path, "r") as fp:
+                for line in fp:
+                    if line.startswith("["):
+                        if not line.startswith("[dynamic]"):
+                            in_group = True
+                        else:
+                            in_group = False
+                    if in_group is True:
+                        fp2.write(line)
+
         self.no_update = True
         try:
             if editor_update:
-                self.Scintilla.setText(open(path).read())
+                self.Scintilla.setText(open("temp_config.txt").read())
             self.config = ConfigParser.RawConfigParser()
-            self.config.read(path)
+            self.config.read("temp_config.txt")
             for section in self.fields:
                 if not section in self.config.sections():
                     self.config.add_section(section)
