@@ -39,10 +39,10 @@ class Camera:
         return np.zeros([count, height, width], dtype=format)
 
     def getVideo(self, buffer):
-        im, timestamp = self.getNewestImage()
+        im = self.getNewestImage()
         buffer[0] = im[:, :, 0]
         for i in range(1, buffer.shape[0]):
-            im, timestamp = self.getNextImage()
+            im = self.getNextImage()
             buffer[i] = im[:, :, 0]
         if self.config["flip_y"]:
             buffer[:] = buffer[::-1]
@@ -123,14 +123,13 @@ class Camera:
         # return if there is no new one
         if counter_max == self.counter_last:
             # print("not new!")
-            return None, None
+            return None
         image = self.mmap.rbf[counter_max_idx].image
-        timestamp = self.mmap.rbf[counter_max_idx].time_unix * 1000 + self.mmap.rbf[counter_max_idx].time_ms
         # print(image.shape, image.dtype)
         self.counter_last = counter_max
         self.last_slot_index = counter_max_idx
         # print("img type:", image.dtype)
-        return image, timestamp
+        return image
 
     def getNextImage(self):
         next_slot_index = (self.last_slot_index + 1) % len(self.mmap.rbf)
@@ -140,7 +139,6 @@ class Camera:
             self.last_slot_index = next_slot_index
             self.counter_last = self.mmap.rbf[next_slot_index].counter
             image = self.mmap.rbf[next_slot_index].image
-            timestamp = self.mmap.rbf[next_slot_index].time_unix * 1000 + self.mmap.rbf[next_slot_index].time_ms
-            return image, timestamp
+            return image
         else:
-            return None, None
+            return None
