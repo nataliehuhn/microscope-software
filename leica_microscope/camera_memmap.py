@@ -25,6 +25,7 @@ class Camera:
     def __init__(self):
         self.config = getConfig(dict())
         self.mmap = MemMap(self.config["memmap"])
+        self.mmap_settings = MemMap(self.config["memmap_settings"])
 
         self.getNewestImage()
 
@@ -43,6 +44,8 @@ class Camera:
         buffer[0] = im[:, :, 0]
         for i in range(1, buffer.shape[0]):
             im = self.getNextImage()
+            while im is None:
+                im = self.getNextImage()
             buffer[i] = im[:, :, 0]
         if self.config["flip_y"]:
             buffer[:] = buffer[::-1]
@@ -74,7 +77,7 @@ class Camera:
         print("WARNING: memmap cannot reset the exposure")
 
     def gain(self) -> float:
-        return None
+        return self.mmap_settings.gain
 
     def setGain(self, gain: float):
         print("WARNING: memmap cannot reset the gain")
@@ -86,7 +89,7 @@ class Camera:
         print("WARNING: memmap cannot reset the binning")
 
     def getFramerate(self) -> float:
-        return None
+        return self.mmap_settings.framerate
 
     def getWidth(self) -> int:
         height, width, channels = self.mmap.rbf[0].image.shape
