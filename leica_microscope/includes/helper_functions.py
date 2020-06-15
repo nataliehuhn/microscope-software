@@ -302,7 +302,8 @@ def modesToDictList(config_modes):
     for mode in getModes(config_modes):
         if mode.startswith("Mode_"):
             mode = eval(mode).to_dict()
-        mode["mode"] = '"'+mode["mode"]+'"'
+        if "mode" in mode:
+            mode["mode"] = '"'+mode["mode"]+'"'
         modes.append(mode)
     return modes
 
