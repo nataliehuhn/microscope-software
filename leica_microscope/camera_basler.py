@@ -86,7 +86,8 @@ class Camera:
         return self.camera.ExposureTime()
 
     def setExposure(self, exposure: float):
-        self.camera.ExposureTime = exposure
+        # exposure is in ms but the camera wants microseconds
+        self.camera.ExposureTime = exposure * 1000
 
     def gain(self) -> float:
         return None
@@ -101,7 +102,7 @@ class Camera:
         print("WARNING: binning is currently not supported")
 
     def getFramerate(self) -> float:
-        return self.camera.AcquisitionFrameRate
+        return self.camera.AcquisitionFrameRate()
 
     def getWidth(self) -> int:
         return self.camera.Width()
