@@ -9,37 +9,53 @@ from leica_microscope.camera import Camera
 from leica_microscope.includes.MemMap import MemMap
 from leica_microscope.includes.config import getConfig
 
+base_dir = Path(__file__).parent
+memmap_def_header = base_dir / "includes/camera_header.xml"
+memmap_def = base_dir / "includes/camera.xml"
+memmap_file = base_dir / "includes/camera.mmap"
+
 
 class MemmapWriter:
     def __init__(self, cam):
-        self.mmap = MemMap("includes/camera_header.xml")
+        self.mmap = MemMap(memmap_def_header)
 
         # kill the old process that is connected
-        p = psutil.Process(self.mmap.pid)
-        p.terminate()
+        if self.mmap.pid != 0 and psutil.pid_exists(self.mmap.pid):
+            p = psutil.Process(self.mmap.pid)
+            p.terminate()
+            p.kill()
 
         # note that we are now the writer of the memmap
         self.mmap.pid = os.getpid()
 
+        # the number of images in the buffer
         self.N = 10
 
+        # store the camera
         self.cam = cam
+
+        # get an image
         im = self.cam.getImage()
-        print(im.shape)
+
+        # and store its shape
         shape = im.shape
         if len(shape) == 2:
             shape = (shape[0], shape[1], 1)
 
-        self.mmap.shape = shape
-        self.mmap.add(dict(name="images", type="memmap", shape=(self.N),
+        self.mmap.shape[:] = shape
+        # add the buffer in the memory map
+        self.mmap.add((dict(name="images", type="memmap", shape=(self.N),
                       layout=(
                           dict(name="counter", type="uint64"),
                           dict(name="shape", shape=len(im.shape), type="uint16"),
                           dict(name="data", shape=im.shape, type="uint16"),
                             )
-                      )
+                      ),)
                  )
+        # add the camera paramters
         self.mmap.add((
+            dict(name="height", type="uint32"),
+            dict(name="width", type="uint32"),
             dict(name="exposure", type="float32"),
             dict(name="gain", type="float32"),
             dict(name="roi", shape=4, type="uint16"),
@@ -49,7 +65,8 @@ class MemmapWriter:
             dict(name="pixel_size", type="float"),
            )
         )
-        self.mmap.add(dict(name="commands", type="memmap", shape=(self.N),
+        # add a list of commands
+        self.mmap.add((dict(name="commands", type="memmap", shape=(self.N),
                            layout=(
                                dict(name="counter", type="uint64"),
                                dict(name="name", type="S20"),
@@ -57,73 +74,113 @@ class MemmapWriter:
                                dict(name="written", type="bool"),
                                dict(name="done", type="bool"),
                            )
-                           )
-                      )
-        self.mmap.saveXML("includes/camera.xml")
+                           ),
+                      ))
+        # save the current shape of the memmory map
+        self.mmap.saveXML(memmap_def)
 
-        for i in range(self.N):
-            self.mmap.images.counter = 0
+        # initialize the images in the buffer
+        for image in self.mmap.images:
+            image.counter = 0
+            image.shape[:] = 0
+            image.data[:] = 0
 
+        # initialize the commands in the buffer
+        for command in self.mmap.commands:
+            command.counter = 0
+            command.name = ""
+            command.value = ""
+            command.written = False
+            command.done = False
+
+        # start the counter
         self.counter = 1
 
+        # store the parameters
         self.store_parameters()
 
     def store_parameters(self):
-        self.mmap.roi = self.cam.getROI()
-        self.mmap.exposure = self.cam.getExposure()
-        self.mmap.gain = self.cam.getGain()
-        self.mmap.binning = self.cam.getBinning()
+        # store all camera parameters in the memmory map
+        self.mmap.width = self.cam.getWidth()
+        self.mmap.height = self.cam.getHeight()
+
+        self.mmap.roi[:] = self.cam.roi()
+        self.mmap.exposure = self.cam.exposure()
+        self.mmap.gain = self.cam.gain()
+        self.mmap.binning = self.cam.binning()
         self.mmap.max_value = self.cam.getMaxValue()
         self.mmap.dtype = self.cam.getDtype().__name__
         self.mmap.pixel_size = self.cam.getPixelSize()
 
     def store_image(self, im):
+        # store an image in the memmory map
         buffer = self.mmap.images[self.counter % self.N]
         buffer.shape[:] = im.shape
         if len(im.shape) == 2:
             buffer.data[:im.shape[0], :im.shape[1]] = im
         else:
             buffer.data[:im.shape[0], :im.shape[1], :im.shape[2]] = im
+        # set and increase the counter
         buffer.counter = self.counter
         self.counter += 1
 
     def stream(self):
+        # start infinite streaming
         while True:
+            # wait untill the next image
             im = self.cam.getImage()
             while im is None:
                 im = self.cam.getImage()
 
+            # store the image
             self.store_image(im)
 
+            # look for open commands
             for command in self.mmap.commands:
-                if command.written is True and command.done is False:
-                    if command.name == "exposure":
-                        self.cam.setExposure(float(command.value))
-                    if command.name == "gain":
-                        self.cam.setGain(float(command.value))
-                    if command.name == "roi":
-                        self.cam.setROI(*[int(i) for i in command.value.split(" ")])
-                    if command.name == "binning":
-                        self.cam.setBinning(int(command.value))
+                if command.written == True and command.done == False:
+                    # and execute them
+                    try:
+                        if command.name == b"exposure":
+                            self.cam.setExposure(float(command.value))
+                        elif command.name == b"gain":
+                            self.cam.setGain(float(command.value))
+                        elif command.name == b"roi":
+                            self.cam.setROI(*[int(i) for i in command.value.split(b" ")])
+                        elif command.name == b"binning":
+                            self.cam.setBinning(int(command.value))
+                        else:
+                            print("ERROR unknown command", command.name)
+                    except Exception as err:
+                        print(err)
                     command.done = True
-
-            self.store_parameters()
+                    # store the current parameters
+                    self.store_parameters()
 
 
 class MemmapReader:
     def __init__(self):
-        self.mmap = MemMap("includes/camera_header.xml")
+        self.mmap = MemMap(memmap_def_header)
 
         # if no process is connected to the camera, start the streamer
         if not psutil.pid_exists(self.mmap.pid):
             self.start_streamer()
 
-        self.mmap = MemMap("includes/camera.xml")
+        self.mmap = MemMap(memmap_def)
+
         self.counter = np.max([im.counter for im in self.mmap.images])
 
     def start_streamer(self):
-        os.remove("includes/camera.mmap")
+        #os.remove("includes/camera.mmap")
+
+        # remove the memmap definition
+        os.remove(memmap_def)
+        # start the steamer
         self.streamer = subprocess.Popen(["python", "streamer.py"])
+        # wait until the streamer started
+        while not os.path.exists(memmap_def):
+            import time
+            time.sleep(0.01)
+        self.mmap = MemMap(memmap_def)
 
     def getImage(self):
         # if no process is connected to the camera, start the streamer
@@ -132,8 +189,14 @@ class MemmapReader:
 
         counter_list = [im.counter for im in self.mmap.images]
 
+        # if our counter got out of data (e.g. an new streamer was started), reset the counter
+        if self.counter > np.min(counter_list):
+            self.counter = 0
+
+        # get the newest image
         counter = np.max(counter_list)
         index = np.argmax(counter_list)
+        # if it is newer than our last imagte, take it
         if counter > self.counter:
             self.counter = counter
             return self.mmap.images[index].data[tuple(slice(0, s) for s in self.mmap.images[index].shape)]
@@ -186,6 +249,12 @@ class MemmapReader:
 
     def getPixelSize(self) -> float:
         return self.mmap.pixel_size
+
+    def getHeight(self) -> int:
+        return self.mmap.height
+
+    def getWidth(self) -> int:
+        return self.mmap.width
 
 
 if __name__ == "__main__":

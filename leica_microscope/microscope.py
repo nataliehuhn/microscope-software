@@ -9,6 +9,7 @@ from typing import Tuple
 
 from leica_microscope.includes.comport import find_mic_port, send_command_and_wait, FlowError
 from leica_microscope.camera import Camera
+from leica_microscope.streamer import MemmapWriter
 from leica_microscope.includes.config import getConfig, writeConfigChange
 from leica_microscope.includes.helper_functions import format_partial, format_with_default
 
@@ -67,7 +68,7 @@ class Microscope:
     calibrated_proj_speed = None
     iteration_time = None
 
-    def __init__(self):
+    def __init__(self, no_camera=False):
         self.config = getConfig(dict(microscope_name="Mic",
                                      coupler=1,
                                      port=None))
@@ -77,7 +78,11 @@ class Microscope:
             raise NoMicroscopeFound("No microscope was found, check if the microscope is running.")
         writeConfigChange(self.config, "port", '"'+self.port+'"')
 
-        self.cam = Camera()
+        if not no_camera:
+            self.cam = Camera()
+            self.memmap_writer = MemmapWriter(self.cam)
+        else:
+            self.cam = None
 
         self.wait = True
         self.nowait = Nowait(self)
@@ -450,7 +455,9 @@ class Microscope:
     """ recoding functions """
 
     def rec_image(self, filename):
-        self.saveImage(format_with_default(filename), self.cam.getImage())
+        im = self.cam.getImage()
+        self.memmap_writer.store_image(im)
+        self.saveImage(format_with_default(filename), im)
 
     def rec_stack(self, filename, n_below=50, n_above=250, slice_thickness_um=5, fast_recording=False, save_projection=False):
         slice_thickness_um = slice_thickness_um
@@ -504,6 +511,7 @@ class Microscope:
             for i in range(n_slices):
                 self.setZPos(z + z_start + slice_thickness_steps * i)
                 buffer[i] = self.cam.getImage()
+                self.memmap_writer.store_image(buffer[i])
 
         # reset position
         self.setZPos(z)
@@ -539,6 +547,8 @@ class Microscope:
         with self.nowait:
             self.setZPos(z + z_stop)
             self.cam.getVideo(buffer)
+
+        self.memmap_writer.store_image(buffer[n_slices//2])
 
         # reset speed and position
         self.setZSpeed(8820000)

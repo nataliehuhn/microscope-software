@@ -3,6 +3,7 @@ import numpy as np
 from collections import OrderedDict
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
+from pathlib import Path
 
 class MemMap(object):
 
@@ -10,7 +11,7 @@ class MemMap(object):
         self.maps = OrderedDict()
         self.layout = []
         self.single = {}
-        if filename.endswith(".xml"):
+        if Path(filename).suffix == ".xml":
             layout, filename = loadXML(filename)
         self.filename = filename
         self.start_offset = offset
@@ -110,12 +111,16 @@ def getXML(layout, root):
         if "align" in element:
             element["align"] = str(element["align"])
         if "shape" in element:
-            element["shape"] = " ".join([str(i) for i in element["shape"]])
+            if isinstance(element["shape"], int):
+                element["shape"] = str(element["shape"])
+            else:
+                element["shape"] = " ".join([str(i) for i in element["shape"]])
         sub_elm = ET.SubElement(root, 'entry', attrib=element)
         if sub_layout is not None:
             getXML(sub_layout, sub_elm)
 
 def saveXML(xml_filename, layout, filename):
+    print(filename, xml_filename)
     filename = os.path.relpath(filename, os.path.dirname(xml_filename))
     root = ET.Element('memmap', attrib=dict(file=filename))
     getXML(layout, root)

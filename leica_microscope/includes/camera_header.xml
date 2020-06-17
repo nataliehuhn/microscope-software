@@ -2,10 +2,5 @@
 <memmap file="camera.mmap">
     <entry name="pid" type="uint32"/>
     <entry name="shape" shape="3" type="uint8"/>
-	<entry name="images" shape="20" type="memmap">
-		<entry name="counter" type="uint32"/>
-        <entry name="shape" shape="3" type="uint8"/>
-		<entry name="image" shape="720 540 1" type="uint8"/>
-	</entry>
 </memmap>
 

@@ -1190,9 +1190,11 @@ class Window(QtWidgets.QWidget):
         if 1:
             #if mmc.getRemainingImageCount():
 
-            self.im = self.cam.getImage()
+            im = self.cam.getImage()
 
-            self.im = self.im >> 2
+            if im is None:
+                return
+            self.im = im# >> 2
 
             # calculate maximum and histogram
 

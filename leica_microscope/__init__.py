@@ -1,2 +1,2 @@
 from .microscope import Microscope
-from .streamer import MemmapReader
+from .streamer import MemmapReader, MemmapWriter
