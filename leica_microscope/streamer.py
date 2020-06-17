@@ -76,8 +76,6 @@ class MemmapWriter:
                            )
                            ),
                       ))
-        # save the current shape of the memmory map
-        self.mmap.saveXML(memmap_def)
 
         # initialize the images in the buffer
         for image in self.mmap.images:
@@ -98,6 +96,9 @@ class MemmapWriter:
 
         # store the parameters
         self.store_parameters()
+
+        # save the current shape of the memmory map
+        self.mmap.saveXML(memmap_def)
 
     def store_parameters(self):
         # store all camera parameters in the memmory map
@@ -126,8 +127,10 @@ class MemmapWriter:
 
     def stream(self):
         # start infinite streaming
+        #print("start")
         while True:
-            # wait untill the next image
+            #print("streaming")
+            # wait until the next image
             im = self.cam.getImage()
             while im is None:
                 im = self.cam.getImage()
@@ -158,6 +161,8 @@ class MemmapWriter:
 
 
 class MemmapReader:
+    streamer = None
+
     def __init__(self):
         self.mmap = MemMap(memmap_def_header)
 
@@ -170,7 +175,14 @@ class MemmapReader:
         self.counter = np.max([im.counter for im in self.mmap.images])
 
     def start_streamer(self):
-        #os.remove("includes/camera.mmap")
+        try:
+            del self.mmap
+        except AttributeError:
+            pass
+        try:
+            os.remove("includes/camera.mmap")
+        except PermissionError:
+            pass
 
         # remove the memmap definition
         os.remove(memmap_def)
@@ -181,6 +193,10 @@ class MemmapReader:
             import time
             time.sleep(0.01)
         self.mmap = MemMap(memmap_def)
+
+    def stop(self):
+        if self.streamer is not None:
+            self.streamer.kill()
 
     def getImage(self):
         # if no process is connected to the camera, start the streamer

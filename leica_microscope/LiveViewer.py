@@ -1199,6 +1199,7 @@ class Window(QtWidgets.QWidget):
             # calculate maximum and histogram
 
             self.im_max = np.amax(self.im)
+            #print("range", np.amin(self.im), np.amax(self.im))
             self.im_hist, self.im_bins = np.histogram(self.im[::4, ::4], bins=np.arange(0, self.cam.getMaxValue() + 20, 10),
                                                   density=True)
             # display the iamge
@@ -1223,6 +1224,7 @@ class Window(QtWidgets.QWidget):
             self.pan_offsetY = 0
         
     def closeEvent(self, event):
+        self.cam.stop()
         if self.window_settings is not None:
             self.window_settings.close()
         exit
