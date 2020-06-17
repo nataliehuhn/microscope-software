@@ -62,6 +62,7 @@ positions_file = os.path.join(output_path, "Positions_tmp.txt")
 #gain_values_file = os.path.join(output_path, "LiveViewer_GainValues.txt")
 #positions_file = os.path.join(output_path, "Positions_tmp.txt")
 from leica_microscope import Microscope
+from leica_microscope import MemmapReader
 from leica_microscope.includes.QExtendedGraphicsView import QExtendedGraphicsView
 
 
@@ -724,7 +725,7 @@ class ModuleExposure(QtWidgets.QGroupBox):
         QtWidgets.QWidget.__init__(self)
         self.parent = parent
         self.mic = parent.mic
-        self.cam = parent.mic.cam
+        self.cam = parent.cam
         layout.addWidget(self)
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
@@ -740,10 +741,10 @@ class ModuleExposure(QtWidgets.QGroupBox):
     def valueChanged(self, value, i):
         if i == 0:
             print("Set Exposure to", value)
-            self.mic.cam.setExposure(value)
+            self.cam.setExposure(value)
         if i == 1:
             print("Set Gain to", value)
-            self.mic.cam.setGain(value)
+            self.cam.setGain(value)
         self.updateStatus()
 
     def updateStatus(self):
@@ -757,7 +758,7 @@ class ModuleROI(QtWidgets.QGroupBox):
     def __init__(self, parent, layout):
         QtWidgets.QWidget.__init__(self)
         self.parent = parent
-        self.cam = parent.mic.cam
+        self.cam = parent.cam
         layout.addWidget(self)
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
@@ -981,7 +982,8 @@ class Window(QtWidgets.QWidget):
         super().__init__(parent)
 
         print("Conneting to microscope...")
-        self.mic = Microscope()
+        self.mic = Microscope(no_camera=True)
+        self.cam = MemmapReader()
         print("... connected")
 
         self.setWindowTitle('LiveViewer')
@@ -1011,7 +1013,7 @@ class Window(QtWidgets.QWidget):
         ModuleCoupler(self, right_layout)
         ModuleExposure(self, right_layout)
         ModuleROI(self, right_layout)
-        ModuleHistogram(self, right_layout, self.mic.cam.getMaxValue())
+        ModuleHistogram(self, right_layout, self.cam.getMaxValue())
         #ModuleSnap(self, right_layout)
         #ModuleProperties(self, right_layout)
         right_layout.addStretch()
@@ -1076,7 +1078,7 @@ class Window(QtWidgets.QWidget):
             #self.UpdateExposureTime()
 
         if 1:
-            #self.mic.cam.fast_recording.__enter__()
+            #self.cam.fast_recording.__enter__()
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self.updateview)
             self.timer.start(100)
@@ -1173,7 +1175,7 @@ class Window(QtWidgets.QWidget):
 
             max_brightness = np.amax(self.im)
 
-            max_value = (100*max_brightness/self.mic.cam.getMaxValue()-5.1)/(40-5.1)*255
+            max_value = (100*max_brightness/self.cam.getMaxValue()-5.1)/(40-5.1)*255
             if max_value > 255:
                 max_value = 255
             if max_value < 0:
@@ -1188,14 +1190,14 @@ class Window(QtWidgets.QWidget):
         if 1:
             #if mmc.getRemainingImageCount():
 
-            self.im = self.mic.cam.getImage()
+            self.im = self.cam.getImage()
 
             self.im = self.im >> 2
 
             # calculate maximum and histogram
 
             self.im_max = np.amax(self.im)
-            self.im_hist, self.im_bins = np.histogram(self.im[::4, ::4], bins=np.arange(0, self.mic.cam.getMaxValue() + 20, 10),
+            self.im_hist, self.im_bins = np.histogram(self.im[::4, ::4], bins=np.arange(0, self.cam.getMaxValue() + 20, 10),
                                                   density=True)
             # display the iamge
 
