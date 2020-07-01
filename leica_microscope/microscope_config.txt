@@ -2,5 +2,5 @@ microscope_name = "Mic3"
 pixel_size = 4.0954 # 4.0954 # um
 coupler = 1.0
 flip_y = False
-camera = "lumenera"
+camera = "hamamatsu"
 port = "COM10"

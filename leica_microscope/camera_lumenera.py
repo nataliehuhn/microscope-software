@@ -84,11 +84,17 @@ class Camera:
     def setExposure(self, exposure: float):
         self.lucam.set_properties(exposure=exposure)
 
+    def get_exposure_range(self):
+        return [0, 10000]
+
     def gain(self) -> float:
         return self.lucam.GetProperty('gain')[0]
 
     def setGain(self, gain: float):
         self.lucam.set_properties(gain=gain)
+
+    def get_gain_range(self):
+        return [0, 10000]
 
     def binning(self) -> int:
         return self.lucam.GetFormat()[0].binningX

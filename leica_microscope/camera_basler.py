@@ -89,11 +89,17 @@ class Camera:
         # exposure is in ms but the camera wants microseconds
         self.camera.ExposureTime = exposure * 1000
 
+    def get_exposure_range(self):
+        return [0, 10000]
+
     def gain(self) -> float:
         return None
 
     def setGain(self, gain: float):
         print("WARNING: gain is automatically adjusted")
+
+    def get_gain_range(self):
+        return [0, 10000]
 
     def binning(self) -> int:
         return 1

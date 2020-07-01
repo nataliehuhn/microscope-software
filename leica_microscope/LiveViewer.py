@@ -732,8 +732,10 @@ class ModuleExposure(QtWidgets.QGroupBox):
         layout.addWidget(self)
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
-        self.input_exposure = QInputNumber(self.layout, "Exposure", self.cam.exposure(), 0, 1000, use_slider=True)
-        self.input_gain = QInputNumber(self.layout, "Gain", self.cam.gain(), 0, 1000, use_slider=True)
+        min_exp, max_exp = self.cam.get_exposure_range()
+        self.input_exposure = QInputNumber(self.layout, "Exposure", self.cam.exposure(), min_exp, max_exp, use_slider=True)
+        min_gain, max_gain = self.cam.get_gain_range()
+        self.input_gain = QInputNumber(self.layout, "Gain", self.cam.gain(), min_gain, max_gain, use_slider=True)
 
         self.input_exposure.valueChanged.connect(lambda v: self.valueChanged(v, 0))
         self.input_gain.valueChanged.connect(lambda v: self.valueChanged(v, 1))

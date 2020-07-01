@@ -56,8 +56,8 @@ class MemmapWriter:
         self.mmap.add((
             dict(name="height", type="uint32"),
             dict(name="width", type="uint32"),
-            dict(name="exposure", type="float32"),
-            dict(name="gain", type="float32"),
+            dict(name="exposure", shape=3, type="float32"),
+            dict(name="gain", shape=3, type="float32"),
             dict(name="roi", shape=4, type="uint16"),
             dict(name="binning", type="uint8"),
             dict(name="max_value", type="uint64"),
@@ -107,8 +107,8 @@ class MemmapWriter:
         self.mmap.height = self.cam.getHeight()
 
         self.mmap.roi[:] = self.cam.roi()
-        self.mmap.exposure = self.cam.exposure()
-        self.mmap.gain = self.cam.gain()
+        self.mmap.exposure[:] = [self.cam.exposure(), self.cam.get_exposure_range()[0], self.cam.get_exposure_range()[1]]
+        self.mmap.gain[:] = [self.cam.gain(), self.cam.get_gain_range()[0], self.cam.get_gain_range()[1]]
         self.mmap.binning = self.cam.binning()
         self.mmap.max_value = self.cam.getMaxValue()
         self.mmap.dtype = self.cam.getDtype().__name__
@@ -241,16 +241,22 @@ class MemmapReader:
         self.setParameter("roi", f"{x} {y} {w} {h}")
 
     def exposure(self) -> float:
-        return self.mmap.exposure
+        return self.mmap.exposure[0]
 
     def setExposure(self, exposure: float):
         self.setParameter("exposure", str(exposure))
 
+    def get_exposure_range(self):
+        return self.mmap.exposure[1:]
+
     def gain(self) -> float:
-        return self.mmap.gain
+        return self.mmap.gain[0]
 
     def setGain(self, gain: float):
         self.setParameter("gain", str(gain))
+
+    def get_gain_range(self):
+        return self.mmap.gain[1:]
 
     def binning(self) -> int:
         return self.mmap.binning

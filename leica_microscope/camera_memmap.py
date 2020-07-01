@@ -76,11 +76,17 @@ class Camera:
     def setExposure(self, exposure: float):
         print("WARNING: memmap cannot reset the exposure")
 
+    def get_exposure_range(self):
+        return [None, None]
+
     def gain(self) -> float:
         return self.mmap_settings.gain
 
     def setGain(self, gain: float):
         print("WARNING: memmap cannot reset the gain")
+
+    def get_gain_range(self):
+        return [None, None]
 
     def binning(self) -> int:
         return 1

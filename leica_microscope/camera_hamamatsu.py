@@ -104,11 +104,17 @@ class Camera:
     def setExposure(self, exposure: float):
         self.camera.setPropertyValue("exposure_time", exposure)
 
+    def get_exposure_range(self):
+        return self.camera.getPropertyRange("exposure_time")
+
     def gain(self) -> float:
         return self.camera.getPropertyValue('contrast_gain')[0]
 
     def setGain(self, gain: float):
         self.camera.setPropertyValue('contrast_gain', gain)
+
+    def get_gain_range(self):
+        return self.camera.getPropertyRange("contrast_gain")
 
     def binning(self) -> int:
         return self.camera.getPropertyValue('binning')[0]
