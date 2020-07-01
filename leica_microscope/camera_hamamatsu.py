@@ -44,7 +44,7 @@ class Camera:
         while cnt < buffer.shape[0]:
             [frames, dims] = self.camera.getFrames()
             for aframe in frames:
-                buffer[cnt] = aframe
+                buffer[cnt] = aframe.getData().reshape(dims[1], dims[0])
                 cnt += 1
 
         self.camera.stopAcquisition()
@@ -56,12 +56,13 @@ class Camera:
     def getImage(self):
         if self.fast_enabled is True:
             [frames, dims] = self.camera.getFrames()
-            im = frames[-1]
+            im = frames[-1].getData().reshape(dims[1], dims[0])
         else:
             self.camera.startAcquisition()
             [frames, dims] = self.camera.getFrames()
-            im = frames[-1]
+            im = frames[-1].getData().reshape(dims[1], dims[0])
             self.camera.stopAcquisition()
+
         if self.config["flip_y"]:
             im = im[::-1]
         return im
@@ -70,10 +71,10 @@ class Camera:
 
     def roi(self):
         return [
-            self.camera.getPropertyValue("subarray_hpos"),
-            self.camera.getPropertyValue("subarray_vpos"),
-            self.camera.getPropertyValue("subarray_hsize"),
-            self.camera.getPropertyValue("subarray_vsize"),
+            self.camera.getPropertyValue("subarray_hpos")[0],
+            self.camera.getPropertyValue("subarray_vpos")[0],
+            self.camera.getPropertyValue("subarray_hsize")[0],
+            self.camera.getPropertyValue("subarray_vsize")[0],
         ]
 
     def setROI(self, x, y, w, h):
@@ -119,10 +120,10 @@ class Camera:
         return self.camera.getPropertyValue("internal_frame_rate")[0]
 
     def getWidth(self) -> int:
-        return self.camera.getPropertyValue("subarray_hsize")
+        return self.camera.getPropertyValue("subarray_hsize")[0]
 
     def getHeight(self) -> int:
-        return self.camera.getPropertyValue("subarray_vsize")
+        return self.camera.getPropertyValue("subarray_vsize")[0]
 
     def getMaxValue(self) -> int:
         pixeldepth = self.camera.getPropertyValue("bit_per_channel")[0]

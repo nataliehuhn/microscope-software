@@ -102,6 +102,7 @@ class MemmapWriter:
 
     def store_parameters(self):
         # store all camera parameters in the memmory map
+        print(self.cam.getWidth())
         self.mmap.width = self.cam.getWidth()
         self.mmap.height = self.cam.getHeight()
 
@@ -167,7 +168,7 @@ class MemmapReader:
         self.mmap = MemMap(memmap_def_header)
 
         # if no process is connected to the camera, start the streamer
-        if not psutil.pid_exists(self.mmap.pid):
+        if self.mmap.pid == 0 or not psutil.pid_exists(self.mmap.pid) or not os.path.exists(memmap_def):
             self.start_streamer()
 
         self.mmap = MemMap(memmap_def)
