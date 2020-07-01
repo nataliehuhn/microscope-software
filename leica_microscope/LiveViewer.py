@@ -29,6 +29,7 @@ from qimage2ndarray import array2qimage
 import time
 import numpy as np
 from leica_microscope.includes.matplotlibwidget import MatplotlibWidget
+from leica_microscope.microscope import NoMicroscopeFound
 import matplotlib.pyplot as plt
 
 
@@ -704,18 +705,20 @@ class ModuleCoupler(QtWidgets.QGroupBox):
         self.updateStatus()
 
     def setCoupler(self, value):
-        self.mic.setCoupler(value)
+        if self.mic != None:
+            self.mic.setCoupler(value)
         self.updateStatus()
         self.parent.signal_coupler_changed.emit(value)
 
     def updateStatus(self):
-        self.setTitle("Coupler: %.1f" % self.mic.getCoupler())
-        if self.mic.getCoupler() == 0.5:
-            self.button_05.setChecked(True)
-            self.button_10.setChecked(False)
-        else:
-            self.button_05.setChecked(False)
-            self.button_10.setChecked(True)
+        if self.mic != None:
+            self.setTitle("Coupler: %.1f" % self.mic.getCoupler())
+            if self.mic.getCoupler() == 0.5:
+                self.button_05.setChecked(True)
+                self.button_10.setChecked(False)
+            else:
+                self.button_05.setChecked(False)
+                self.button_10.setChecked(True)
 
 
 class ModuleExposure(QtWidgets.QGroupBox):
@@ -982,7 +985,12 @@ class Window(QtWidgets.QWidget):
         super().__init__(parent)
 
         print("Conneting to microscope...")
-        self.mic = Microscope(no_camera=True)
+        try:
+            self.mic = Microscope(no_camera=True)
+        except NoMicroscopeFound as err:
+            print("leica_microscope.microscope.NoMicroscopeFound:", err, file=sys.stderr)
+            self.mic = None
+
         self.cam = MemmapReader()
         print("... connected")
 
@@ -1003,11 +1011,12 @@ class Window(QtWidgets.QWidget):
         self.origin = self.view.origin
         center_layout.addWidget(self.view)
 
-        ModuleObjective(self, left_layout)
-        ModuleMethods(self, left_layout)
-        ModuleIntensity(self, left_layout)
-        ModuleFilters(self, left_layout)
-        ModulePosition(self, left_layout)
+        if self.mic != None:
+            ModuleObjective(self, left_layout)
+            ModuleMethods(self, left_layout)
+            ModuleIntensity(self, left_layout)
+            ModuleFilters(self, left_layout)
+            ModulePosition(self, left_layout)
         left_layout.addStretch()
 
         ModuleCoupler(self, right_layout)
