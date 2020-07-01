@@ -186,7 +186,8 @@ class MemmapReader:
             pass
 
         # remove the memmap definition
-        os.remove(memmap_def)
+        if os.path.exists(memmap_def):
+            os.remove(memmap_def)
         # start the steamer
         self.streamer = subprocess.Popen(["python", "streamer.py"])
         # wait until the streamer started
