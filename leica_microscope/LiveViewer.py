@@ -695,11 +695,16 @@ class ModuleCoupler(QtWidgets.QGroupBox):
         self.button_05.setCheckable(True)
         self.layout1.addWidget(self.button_05)
 
+        self.button_055 = QtWidgets.QPushButton("0.55")
+        self.button_055.setCheckable(True)
+        self.layout1.addWidget(self.button_055)
+
         self.button_10 = QtWidgets.QPushButton("1.0")
         self.button_10.setCheckable(True)
         self.layout1.addWidget(self.button_10)
 
         self.button_05.clicked.connect(lambda x: self.setCoupler(0.5))
+        self.button_055.clicked.connect(lambda x: self.setCoupler(0.55))
         self.button_10.clicked.connect(lambda x: self.setCoupler(1.0))
 
         self.updateStatus()
@@ -712,12 +717,18 @@ class ModuleCoupler(QtWidgets.QGroupBox):
 
     def updateStatus(self):
         if self.mic != None:
-            self.setTitle("Coupler: %.1f" % self.mic.getCoupler())
+            self.setTitle("Coupler: %.2f" % self.mic.getCoupler())
             if self.mic.getCoupler() == 0.5:
                 self.button_05.setChecked(True)
+                self.button_055.setChecked(False)
+                self.button_10.setChecked(False)
+            elif self.mic.getCoupler() == 0.55:
+                self.button_05.setChecked(False)
+                self.button_055.setChecked(True)
                 self.button_10.setChecked(False)
             else:
                 self.button_05.setChecked(False)
+                self.button_055.setChecked(False)
                 self.button_10.setChecked(True)
 
 
