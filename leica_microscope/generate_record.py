@@ -48,7 +48,7 @@ if len(modes) > 1:
 elif len(modes) == 1 and len(modes[0]) != 0:
     output("")
     output("# set the mode for recording")
-    output(f"mic.setProperties({formatDict(modes[0])})")
+    output(f"mic.setProperties({formatDict(modes[0], escape=True)})")
 
 
 if config.grid.countx > 1 or config.grid.county > 1:

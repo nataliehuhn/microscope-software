@@ -303,17 +303,19 @@ def modesToDictList(config_modes):
         if mode.startswith("Mode_"):
             mode = eval(mode).to_dict()
         if "mode" in mode:
-            mode["mode"] = '"'+mode["mode"]+'"'
+            mode["mode"] = mode["mode"]
         modes.append(mode)
     return modes
 
-def formatDict(dict):
-    def to_string(v):
-        if isinstance(v, str):
-            return '"'+v+'"'
-        return str(v)
-
-    return ", ".join(k+"="+str(v) for k, v in dict.items())
+def formatDict(dict, escape=False):
+    if escape is True:
+        def to_string(v):
+            if isinstance(v, str):
+                return '"'+v+'"'
+            return str(v)
+    else:
+        to_string = str
+    return ", ".join(k+"="+to_string(v) for k, v in dict.items())
 
 def getConfig():
     if len(sys.argv) >= 2:
