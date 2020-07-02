@@ -605,7 +605,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         try:
             positions = np.loadtxt(fileName)
         except IOError:
-            self.positions = ()
+            self.positions = []
             return
         if len(positions.shape) == 1 and positions.shape[0] == 3:
             positions = positions.reshape(1, 3)
