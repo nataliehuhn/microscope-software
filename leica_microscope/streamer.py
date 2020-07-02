@@ -20,10 +20,11 @@ class MemmapWriter:
         self.mmap = MemMap(memmap_def_header)
 
         # kill the old process that is connected
-        if self.mmap.pid != 0 and psutil.pid_exists(self.mmap.pid):
+        while self.mmap.pid != 0 and psutil.pid_exists(self.mmap.pid):
             p = psutil.Process(self.mmap.pid)
             p.terminate()
             p.kill()
+            time.sleep(0.1)
 
         # note that we are now the writer of the memmap
         self.mmap.pid = os.getpid()
@@ -102,7 +103,6 @@ class MemmapWriter:
 
     def store_parameters(self):
         # store all camera parameters in the memmory map
-        print(self.cam.getWidth())
         self.mmap.width = self.cam.getWidth()
         self.mmap.height = self.cam.getHeight()
 

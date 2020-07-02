@@ -120,7 +120,6 @@ def getXML(layout, root):
             getXML(sub_layout, sub_elm)
 
 def saveXML(xml_filename, layout, filename):
-    print(filename, xml_filename)
     filename = os.path.relpath(filename, os.path.dirname(xml_filename))
     root = ET.Element('memmap', attrib=dict(file=filename))
     getXML(layout, root)

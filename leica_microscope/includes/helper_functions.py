@@ -322,7 +322,7 @@ def getConfig():
         config_filename = sys.argv[1]
     else:
         config_filename = os.path.expandvars(r"%APPDATA%\Microscope\Config.txt")
-    print(config_filename)
+
     # overwrite defaults with personal cfg if available
     if os.path.exists(config_filename):
         config = Config(config_filename, os.path.join(os.path.dirname(__file__), "..", "ConfigCreator", "Config_Default.txt"))
