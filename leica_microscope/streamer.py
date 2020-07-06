@@ -15,6 +15,19 @@ memmap_def = base_dir / "includes/camera.xml"
 memmap_file = base_dir / "includes/camera.mmap"
 
 
+def has_handle(fpath):
+    """ check if the file is currently open in another process """
+    for proc in psutil.process_iter():
+        try:
+            for item in proc.open_files():
+                if fpath == item.path:
+                    return True
+        except Exception:
+            pass
+
+    return False
+
+
 class MemmapWriter:
     def __init__(self, cam):
         self.mmap = MemMap(memmap_def_header)
@@ -190,8 +203,8 @@ class MemmapReader:
             os.remove(memmap_def)
         # start the steamer
         self.streamer = subprocess.Popen(["python", "streamer.py"])
-        # wait until the streamer started
-        while not os.path.exists(memmap_def):
+        # wait until the streamer started (and finished writing the file)
+        while not os.path.exists(memmap_def) and not has_handle(memmap_def):
             import time
             time.sleep(0.01)
         self.mmap = MemMap(memmap_def)
