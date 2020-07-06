@@ -2,6 +2,7 @@ from leica_microscope.includes.hamamatsu_camera import HamamatsuCamera
 import numpy as np
 
 from leica_microscope.includes.config import getConfig
+from leica_microscope.camera import CameraBase
 
 class Fast:
     def __init__(self, cam, camera):
@@ -19,16 +20,16 @@ class Fast:
     def __call__(self, *args, **kwargs):
         pass
 
-class Camera:
+class Camera(CameraBase):
     def __init__(self):
-        self.config = getConfig(dict(PixelSize=4.0954))
+        super().__init__()
+        self.config = getConfig(dict(PixelSize=6.45))
         self.camera = HamamatsuCamera(0)
         self.camera.initCamera()
         self.camera.setPropertyValue("readout_speed", 1)
         self.camera.setPropertyValue("defect_correct_mode", 1)
 
         self.fast_recording = Fast(self, self.camera)
-        self.fast_enabled = False
 
     """ recording """
 

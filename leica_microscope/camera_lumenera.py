@@ -2,6 +2,7 @@ from lucam import Lucam, API
 import numpy as np
 
 from leica_microscope.includes.config import getConfig
+from leica_microscope.camera import CameraBase
 
 class Fast:
     def __init__(self, cam, lucam):
@@ -22,14 +23,14 @@ class Fast:
     def __call__(self, *args, **kwargs):
         pass
 
-class Camera:
+class Camera(CameraBase):
     def __init__(self):
+        super().__init__()
         self.config = getConfig(dict(PixelSize=4.0954))
         self.lucam = Lucam()
         self.resetFormat()
 
         self.fast_recording = Fast(self, self.lucam)
-        self.fast_enabled = False
 
     def resetFormat(self):
         frameformat, framerate = self.lucam.GetFormat()

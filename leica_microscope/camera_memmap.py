@@ -3,27 +3,14 @@ import time
 
 from leica_microscope.includes.MemMap import MemMap
 from leica_microscope.includes.config import getConfig
+from leica_microscope.camera import CameraBase
 
-class Fast:
-    def __init__(self):
-        pass
 
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-    def __call__(self, *args, **kwargs):
-        pass
-
-class Camera:
+class Camera(CameraBase):
     counter_last = -1
-    fast_recording = Fast()
-    fast_enabled = False
 
     def __init__(self):
-        self.config = getConfig(dict())
+        super().__init__()
         self.mmap = MemMap(self.config["memmap"])
         self.mmap_settings = MemMap(self.config["memmap_settings"])
 
