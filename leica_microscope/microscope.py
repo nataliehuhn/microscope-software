@@ -1,11 +1,10 @@
-from __future__ import print_function, division
 import sys
 import time
 import socket
 import numpy as np
 from pathlib import Path
 import tifffile
-from typing import Tuple
+from typing import Tuple, Union
 
 from leica_microscope.includes.comport import find_mic_port, send_command_and_wait, FlowError
 from leica_microscope.camera import Camera
@@ -121,7 +120,8 @@ class Microscope:
         while self.wait and np.any(function()) and time.time() - start_time < timeout:
             time.sleep(0.0001)
 
-    def getAllProperties(self):
+    def getAllProperties(self) -> dict:
+        """ Get a dictionary of all important property values of the microscope. """
         commands = []
         formats = []
         names = []
@@ -194,13 +194,15 @@ class Microscope:
 
     """ helpers """
 
-    def loadPositions(self, filename) -> np.ndarray:
+    def loadPositions(self, filename: Union[str, Path]) -> np.ndarray:
+        """ Load a positions file Nx3 of N positions. """
         positions = np.loadtxt(filename, dtype=int)
         if len(positions.shape) == 1:
             positions = np.array([positions])
         return positions
 
-    def getDefaultFilename(self, folder):
+    def getDefaultFilename(self, folder: Union[str, Path]) -> str:
+        """ Get a default filename with placeholders for datetime, system, rep, pos, x, y, mode, z."""
         save_filename = r"{datetime}_{system}_rep{repetition}_pos{pos}_x{x}_y{y}_mode{mode}_z{z}.tif"
         # if the timestamp is defined by the command line arguments, take that
         # this is used to ensure that the config and the recode file have the same timestamp as the images
@@ -216,10 +218,12 @@ class Microscope:
 
     """ positions """
 
-    def getPos(self):
+    def getPos(self) -> np.ndarray:
+        """ Get the XYZ position in steps. """
         return np.array(self.send_command_and_wait(["72023", "73023", "71023"], [int, int, int]))
 
     def setPos(self, pos):
+        """ Set the XYZ position in steps. """
         x, y, z = pos
         try:
             self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
@@ -231,21 +235,27 @@ class Microscope:
         self.wait_for_stop(self.getMoving)
 
     def getMoving(self) -> np.array:
+        """ Get the moving state for XYZ. """
         return np.array(self.send_command_and_wait(["72004", "73004", "71004"], [int, int, int])).astype(bool)
 
     def getXMoving(self) -> bool:
+        """ Get whether the x stage is moving. """
         return self.send_command_and_wait("72004", int) == 1
 
     def getYMoving(self) -> bool:
+        """ Get whether the y stage is moving. """
         return self.send_command_and_wait("73004", int) == 1
 
     def getZMoving(self) -> bool:
+        """ Get whether the z drive is moving. """
         return self.send_command_and_wait("71004", int) == 1
 
-    def getXPos(self):
+    def getXPos(self) -> int:
+        """ Get the x position in steps. """
         return self.send_command_and_wait("72023", int)
 
     def setXPos(self, x: int):
+        """ Set the x position in steps. """
         try:
             self.send_command_and_wait("72022 %d" % x)
         except FlowError:
@@ -255,10 +265,12 @@ class Microscope:
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getXMoving)
 
-    def getYPos(self):
+    def getYPos(self) -> int:
+        """ Get the y position in steps. """
         return self.send_command_and_wait("73023", int)
 
     def setYPos(self, y: int):
+        """ Set the y position in steps. """
         try:
             self.send_command_and_wait("73022 %d" % y)
         except FlowError:
@@ -268,10 +280,12 @@ class Microscope:
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getYMoving)
 
-    def getZPos(self):
+    def getZPos(self) -> int:
+        """ Get the z position in steps. """
         return self.send_command_and_wait("71023", int)
 
-    def setZPos(self, z):
+    def setZPos(self, z: int):
+        """ Set the z position in steps. """
         try:
             self.send_command_and_wait("71022 %d" % z)
         except FlowError:
@@ -284,70 +298,91 @@ class Microscope:
     """ speed adjustments """
 
     def getXSpeed(self) -> int:
+        """ Get the speed of the x stage. """
         return self.send_command_and_wait("72033", int)
 
     def setXSpeed(self, speed: int):
+        """ Set the speed of the x stage. """
         self.send_command_and_wait("72032 %d" % speed)
 
     def getYSpeed(self) -> int:
+        """ Get the speed of the y stage. """
         return self.send_command_and_wait("73033", int)
 
     def setYSpeed(self, speed: int):
+        """ Set the speed of the y stage. """
         self.send_command_and_wait("73032 %d" % speed)
 
     def getZSpeed(self) -> int:
+        """ Get the speed of the z stage. """
         return self.send_command_and_wait("71033", int)
 
     def setZSpeed(self, speed: int):
+        """ Set the speed of the z stage. """
         self.send_command_and_wait("71032 %d" % speed)
 
     def getXSpeedMax(self) -> int:
+        """ Get the maximal speed of the x stage. """
         return self.send_command_and_wait("72059", int)
 
     def getYSpeedMax(self) -> int:
+        """ Get the maximal speed of the y stage. """
         return self.send_command_and_wait("73059", int)
 
     def getZSpeedMax(self) -> int:
+        """ Get the maximal speed of the z stage. """
         return self.send_command_and_wait("71059", int)
 
     def getXRange(self) -> Tuple[int, int]:
+        """ Get the min and max position of the x stage. """
         return self.send_command_and_wait(["72028", "72029"], [int, int])
 
     def getYRange(self) -> Tuple[int, int]:
+        """ Get the min and max position of the y stage. """
         return self.send_command_and_wait(["73028", "73029"], [int, int])
 
     def getZRange(self) -> Tuple[int, int]:
+        """ Get the min and max position of the z stage. """
         return self.send_command_and_wait(["71028", "71056"], [int, int])
 
     """ resolutions"""
 
     def getXResolution(self) -> float:
+        """ Get the resolution, e.g. steps to micrometer, of the x stage. """
         return self.send_command_and_wait("72034", float)
 
     def getYResolution(self) -> float:
+        """ Get the resolution, e.g. steps to micrometer, of the y stage. """
         return self.send_command_and_wait("73034", float)
 
     def getZResolution(self) -> float:
+        """ Get the resolution, e.g. steps to micrometer, of the z stage. """
         return self.send_command_and_wait("71042", float)
 
     """ main microscope """
 
     def getLampIntensity(self) -> int:
+        """ Get the intensity of the lamp. """
         return self.send_command_and_wait("77021", int)
 
     def setLampIntensity(self, intensity: int):
+        """ Set the intensity of the lamp. """
         self.send_command_and_wait("77020 %d" % intensity)
 
     def setApertureTL(self, intensity: int):
+        """ Set the aperture. """
         self.send_command_and_wait("84022 %d" % intensity)
 
     def setFieldTL(self, intensity: int):
+        """ Set the field diaphragm. """
         self.send_command_and_wait("94022 %d" % intensity)
 
     def getMode(self) -> Tuple[int, Tuple[int, str]]:
+        """ Get the current mode. """
         return self.send_command_and_wait(["70028", "78023"], [int, [int, str]])
 
     def setMode(self, mode, fluo_channel=None):
+        """ Set the mode. """
         # if the mode is a string, convert it to an id
         if isinstance(mode, str):
             mode = self.mode_ids[mode.upper()]
@@ -366,41 +401,52 @@ class Microscope:
             self.mode = self.send_command_and_wait("70028", int)
 
     def setShutter(self, shutter_open: int):
+        """ Set the shutter to open or closed. """
         self.send_command_and_wait("77032 1 %d" % int(shutter_open))
 
     """ objective properties """
 
-    def getMagnification(self):
+    def getMagnification(self) -> int:
+        """ Get the magnification of the current objective. """
         return self.send_command_and_wait("76033 a 1", [None, None, int])
 
-    def getObjectiveIndex(self):
+    def getObjectiveIndex(self) -> int:
+        """ Get the index of the current objective. """
         return self.send_command_and_wait("76023", int)
 
-    def getNumericalAperture(self):
+    def getNumericalAperture(self) -> float:
+        """ Get the numerical aperture of the current objective. """
         return self.send_command_and_wait("76033 a 2", [None, None, float])
 
-    def getObjective(self):
+    def getObjective(self) -> str:
+        """ Get the serial number of the current objective. """
         return self.send_command_and_wait("76033 a 3", [None, None, str])
 
-    def setObjective(self, pos):
+    def setObjective(self, pos: int):
+        """ Set the objective by providing its position_index. """
         return self.send_command_and_wait("76022 %d" % pos)
 
     """"""
 
-    def getEffectiveMagnification(self):
+    def getEffectiveMagnification(self) -> float:
+        """ Get the effective magnification (objective*coupler). """
         return self.getMagnification() * self.config["coupler"]
 
-    def getCoupler(self):
+    def getCoupler(self) -> float:
+        """ Get the magnification of the coupler (as defined by the config). """
         return self.config["coupler"]
 
-    def setCoupler(self, value):
+    def setCoupler(self, value: float):
+        """ Set the magnification of the coupler. """
         self.config["coupler"] = value
-        writeConfigChange(self.config, "coupler", "%.1f" % value)
+        writeConfigChange(self.config, "coupler", "%.2f" % value)
 
-    def getMicroscopeName(self):
+    def getMicroscopeName(self) -> str:
+        """ Get the name of the microscope (as defined by the config). """
         return self.config["microscope_name"]
 
     def getMetadata(self):
+        """ Get all meta data to be stored with the image. """
         self.metadata = {}
         self.metadata["Coupler"] = float(self.config["coupler"])
 
@@ -423,18 +469,18 @@ class Microscope:
 
     """ image saveing """
 
-    def saveImage(self, name, img, add_metadata=None):
-        """ save an image with meta data """
+    def saveImage(self, filename: str, img: np.ndarray, add_metadata: dict = None):
+        """ Save an image to the specified filename with meta data. """
         # ensure that the folder exists
-        name = Path(name)
-        name.parent.mkdir(exist_ok=True)
+        filename = Path(filename)
+        filename.parent.mkdir(exist_ok=True)
         # gather the metadata
         metadata = self.getMetadata()
         metadata.update(self.cam.getMetadata())
         if add_metadata is not None:
             metadata.update(add_metadata)
         # and save the file
-        tifffile.imsave(name, img, metadata=metadata)
+        tifffile.imsave(filename, img, metadata=metadata)
 
     """ set multiple things at once """
 
@@ -454,12 +500,35 @@ class Microscope:
 
     """ recoding functions """
 
-    def rec_image(self, filename):
+    def rec_image(self, filename: str):
+        """ Record a single image to a file. """
         im = self.cam.getImage()
         self.memmap_writer.store_image(im)
         self.saveImage(format_with_default(filename), im)
 
-    def rec_stack(self, filename, n_below=50, n_above=250, slice_thickness_um=5, fast_recording=False, save_projection=False):
+    def rec_stack(self, filename: str, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0, fast_recording: bool = False, save_projection: bool = False):
+        """
+        Record a stack of images.
+
+        It can be either in fast mode ("fast_recording=True") or precise mode
+        ("fast_recording=False"). For fast mode, the microscope drives to the top position of the stack and continuously
+        drives to the bottom position of the stack while the camera tracks images. Due to the lack of exact synchronisation
+        between images and the z positions, the z positions are not reliable. Therefore, this mode is primarily used for
+        projections where the exact z position is not very important. For the precise mode, the microscope moves to each
+        stack position separately, and the camera waits for the microscope to arrive before it takes an image.
+
+        The results can either be saved as a list of images or as a list of projections (min, max).
+
+        Args:
+            filename(str): the filename where to save the images. It needs to contain {z} which will be replaced by the
+                index of the z slice.
+            n_below: The number of slices below the current position.
+            n_above: The number of slices above the current position.
+            slice_thickness_um: The thickness of a slice in µm.
+            fast_recording: Whether to use fast recording (True) or precise recording (False).
+            save_projection: Whether to save the projections (True) or the single images (False).
+        """
+
         slice_thickness_um = slice_thickness_um
         slice_start = n_below
         slice_stop = n_above
@@ -499,10 +568,36 @@ class Microscope:
             self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype))
             self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype))
 
-    def rec_projection(self, filename, n_below=50, n_above=250, slice_thickness_um=5, fast_recording=True, save_projection=True):
-        return self.rec_stack(filename, n_below, n_above, slice_thickness_um, fast_recording, save_projection)
+    def rec_projection(self, filename: str, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0,
+                       fast_recording: bool = True, save_projection: bool = True):
+        """
+        The same as rec_stack but with the defaults set to fast recording and saving of prjections.
 
-    def recordPreciseStackToBuffer(self, z, z_start, z_stop, n_slices):
+        Args:
+            filename(str): the filename where to save the images. It needs to contain {z} which will be replaced by the
+                index of the z slice.
+            n_below: The number of slices below the current position.
+            n_above: The number of slices above the current position.
+            slice_thickness_um: The thickness of a slice in µm.
+            fast_recording: Whether to use fast recording (True) or precise recording (False).
+            save_projection: Whether to save the projections (True) or the single images (False).
+        """
+        self.rec_stack(filename, n_below, n_above, slice_thickness_um, fast_recording, save_projection)
+
+    def recordPreciseStackToBuffer(self, z: int, z_start: int, z_stop: int, n_slices: int) -> np.ndarray:
+        """
+        Record a stack of images in precise mode, e.g. moving to each position separatedly and taking a image when the
+        zdrive arrived to the given position.
+
+        Args:
+            z: The current z position.
+            z_start: The z position where to start.
+            z_stop: The z position where to end.
+            n_slices: The number of slices to take.
+
+        Returns:
+            buffer: An ndarray of shape [n_slices, height, width] of the recorded images.
+        """
         slice_thickness_steps = (z_stop-z_start) // n_slices
         # prepare the video buffer (a numpy array the size to hold all images)
         buffer = self.cam.getVideoBuffer(n_slices)
@@ -518,7 +613,20 @@ class Microscope:
 
         return buffer
 
-    def recordFastStackToBuffer(self, z, z_start, z_stop, n_slices):
+    def recordFastStackToBuffer(self, z: int, z_start: int, z_stop: int, n_slices: int) -> np.ndarray:
+        """
+        Record a stack of images in fast mode, e.g. moving continuously from start to end while recoding. Without precise
+        synchronisation of z position and image.
+
+        Args:
+            z: The current z position.
+            z_start: The z position where to start.
+            z_stop: The z position where to end.
+            n_slices: The number of slices to take.
+
+        Returns:
+            buffer: An ndarray of shape [n_slices, height, width] of the recorded images.
+        """
         # Calculate the approximate speed to get the desired number of images using the current framerate
         if self.calibrated_proj_speed is None:
             fps = self.cam.getFramerate()
@@ -558,8 +666,7 @@ class Microscope:
 
     """ time keeping """
     def waitSinceLast(self, wait_time: float):
+        """ Ensure that at least wait_time has passed since the last call. If not wait accordingly. """
         if self.iteration_time is not None and time.time() - self.iteration_time < wait_time:
             time.sleep(wait_time - (time.time() - self.iteration_time))
         self.iteration_time = wait_time
-
-
