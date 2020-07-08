@@ -67,7 +67,7 @@ class Microscope:
     calibrated_proj_speed = None
     iteration_time = None
 
-    def __init__(self, no_camera=False):
+    def __init__(self, no_camera=False, no_init=False):
         self.config = getConfig(dict(microscope_name="Mic",
                                      coupler=1,
                                      port=None))
@@ -86,6 +86,9 @@ class Microscope:
         self.wait = True
         self.nowait = Nowait(self)
         self.verbose = False
+
+        if no_init is True:
+            return
 
         self.properties = self.getAllProperties()
         self.magnification, self.numerical_aperture, self.objective, self.mode, self.channel = \

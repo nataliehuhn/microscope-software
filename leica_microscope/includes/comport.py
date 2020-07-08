@@ -109,6 +109,8 @@ def find_mic_port(port):
 
 
 def apply_format(string, format):
+    if format is None:
+        return string
     if not isinstance(format, (list, tuple)):
         format = [format]
     result = [fmt(param) for fmt, param in zip(format, string.split()) if fmt is not None]
@@ -156,13 +158,13 @@ def send_command_and_wait(command_list, port, output_format=None, verbose=False,
     if not isinstance(command_list, (list, tuple)):
         command_list = [command_list]
         if output_format is None:
-            output_format = [str]
+            output_format = [None]
         else:
             output_format = [output_format]
         single_command = True
 
     if output_format is None:
-        output_format = [str] * len(command_list)
+        output_format = [None] * len(command_list)
 
     # ensure that all commands end with \r
     for i in range(len(command_list)):

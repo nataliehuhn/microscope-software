@@ -74,7 +74,7 @@ class CameraBase:
 
     """ properties """
 
-    def roi(self) -> List[int, int, int, int]:
+    def roi(self) -> List[int]:
         """ Get the currently active region of interest (roi). """
         return None
 
@@ -91,7 +91,7 @@ class CameraBase:
         # exposure is in ms but the camera wants microseconds
         print("WARNING: set exposure is currently not supported")
 
-    def get_exposure_range(self) -> List[int, int]:
+    def get_exposure_range(self) -> List[int]:
         """ Get the range of allowed exposure times. """
         return [0, 10000]
 
@@ -103,7 +103,7 @@ class CameraBase:
         """ Set the gain value. """
         print("WARNING: set gain is currently not supported")
 
-    def get_gain_range(self) -> List[int, int]:
+    def get_gain_range(self) -> List[int]:
         """ Get the range of allowed gain values. """
         return [0, 10000]
 
