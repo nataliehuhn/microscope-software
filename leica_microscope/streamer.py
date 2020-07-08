@@ -33,7 +33,7 @@ class MemmapWriter:
         self.mmap = MemMap(memmap_def_header)
 
         # kill the old process that is connected
-        while self.mmap.pid != 0 and psutil.pid_exists(self.mmap.pid):
+        while self.mmap.pid != 0 and psutil.pid_exists(self.mmap.pid) and self.mmap.pid != os.getpid():
             p = psutil.Process(self.mmap.pid)
             p.terminate()
             p.kill()
