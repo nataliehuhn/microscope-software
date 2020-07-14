@@ -229,13 +229,13 @@ class ModuleObjective(QtWidgets.QGroupBox):
         self.index = self.mic.properties["current_objective"]
 
         for i in range(6):
-            button = QtWidgets.QPushButton("%s" % self.magnifications[i])
+            button = QtWidgets.QPushButton("")
             button.setCheckable(True)
             if self.magnifications[i] == "-":
                 button.setDisabled(True)
             else:
                 self.magnifications[i] = int(self.magnifications[i])
-                button.setText("%d x" % self.magnifications[i])
+                button.setText(f"{self.magnifications[i]} x")
             button.clicked.connect(lambda x, i=i: self.buttonClicked(i))
             self.layout.addWidget(button, i // 3, i % 3)
             self.buttons.append(button)
@@ -845,14 +845,12 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         self.layout.addWidget(self.label)
 
         self.parent.signal_new_image.connect(self.updateStatus)
-        #self.updateStatus()
 
     def updateStatus(self):
         max = self.parent.im_max
-        #print(max, self.bitDepth, 2**self.bitDepth, f"{self.parent.im[0,0]:016b}")
-        self.setTitle("Histogram %3.1f%% (%d)" % (100 * max / self.max_value, max))
+        self.setTitle(f"Histogram {100 * max / self.max_value:3.1f}% ({max})")
         self.plot_line.set_data(self.parent.im_bins[:-1], self.parent.im_hist)
-        self.label.setText("Overexposed: %d%%" % int(self.parent.im_hist[-2]*1000))
+        self.label.setText(f"Overexposed: {int(self.parent.im_hist[-2]*1000)}%")
         self.plot.figure.gca().set_ylim(0, self.parent.im_hist[:-2].max()*1.05)
         self.plot.draw()
 
