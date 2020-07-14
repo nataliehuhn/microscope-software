@@ -176,6 +176,7 @@ class MemmapWriter:
 
 class MemmapReader:
     streamer = None
+    inactive_timer = None
 
     def __init__(self):
         self.mmap = MemMap(memmap_def_header)
@@ -216,7 +217,17 @@ class MemmapReader:
     def getImage(self):
         # if no process is connected to the camera, start the streamer
         if not psutil.pid_exists(self.mmap.pid):
+            # if there is no inactive timer started yet, start it
+            if self.inactive_timer is None:
+                self.inactive_timer = time.time()
+                return None
+            # if the other process has been inactive for less than a second, wait
+            if time.time() - self.inactive_timer < 1:
+                return None
+            # the other process has been inactive for too long, start a new streamer
             self.start_streamer()
+        # reset the inactive timer
+        self.inactive_timer = None
 
         counter_list = [im.counter for im in self.mmap.images]
 
