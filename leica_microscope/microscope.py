@@ -206,7 +206,7 @@ class Microscope:
 
     def getDefaultFilename(self, folder: Union[str, Path]) -> str:
         """ Get a default filename with placeholders for datetime, system, rep, pos, x, y, mode, z."""
-        save_filename = r"{datetime}_{system}_rep{repetition}_pos{pos}_x{x}_y{y}_mode{mode}_z{z}.tif"
+        save_filename = r"{datetime}_{system}_rep{repetition:03}_pos{pos:02}_x{x:2}_y{y:2}_mode{mode}_z{z:4}.tif"
         # if the timestamp is defined by the command line arguments, take that
         # this is used to ensure that the config and the recode file have the same timestamp as the images
         for arg in sys.argv:
@@ -634,12 +634,25 @@ class Microscope:
         if self.calibrated_proj_speed is None:
             fps = self.cam.getFramerate()
 
+            while self.getZMoving():
+                print("waiting", self.getZMoving())
+                pass
+
             self.setZSpeed(88200)
             current_z_speed = self.getZSpeed()
 
             self.setZPos(z + z_start)
+
+            while self.getZMoving():
+                print("waiting", self.getZMoving())
+                pass
+
             t = time.time()
             self.setZPos(z + z_stop)
+
+            while self.getZMoving():
+                print("waiting", self.getZMoving())
+                pass
             duration_drive = time.time() - t
             duration_take_images = n_slices / fps
 
