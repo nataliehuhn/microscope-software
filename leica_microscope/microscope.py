@@ -741,3 +741,6 @@ class Microscope:
                 time.sleep(wait_time - passed_time)
         self.iteration_time = time.time()
         print(f"({int(self.iteration_time-self.first_iteration_time)}s)", end="")
+
+    def resetWaitTimer(self):
+        self.first_iteration_time = time.time()

@@ -360,7 +360,6 @@ class bar:
     def __iter__(self):
         global indent
         indent += 1
-        start_time = time.time()
         while True:
             try:
                 value = next(self.iterable)
