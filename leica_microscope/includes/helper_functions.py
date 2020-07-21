@@ -366,7 +366,7 @@ class bar:
             except StopIteration:
                 indent -= 1
                 return None
-            percent = self.iteration / (self.len-1)
+            percent = self.iteration / self.len
             element_count = 10
             element_count_full = int(np.floor(element_count * percent))
             if indent > 0:
