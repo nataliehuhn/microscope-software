@@ -370,8 +370,9 @@ class bar:
             percent = self.iteration / self.len
             element_count = 10
             element_count_full = int(np.floor(element_count * percent))
+            print("\n", end="")
             if indent > 0:
-                print("\n"+("   " * indent), end="")
+                print("   " * indent, end="")
             print(self.name + ":", str(self.iteration+1)+"/"+str(self.len), end=" ")# f"({int(time.time()-start_time)}s)")
             self.iteration += 1
             yield value
