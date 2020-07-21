@@ -376,6 +376,15 @@ class bar:
             self.iteration += 1
             yield value
 
+
+def formatByteNumber(num, suffix='B'):
+    for unit in ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z']:
+        if abs(num) < 1024.0:
+            return "%3.1f%s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f%s%s" % (num, 'Y', suffix)
+
+
 if __name__ == "__main__":
     name = "{bla} asd {blub}"
     print(name)

@@ -10,7 +10,7 @@ from leica_microscope.includes.comport import find_mic_port, send_command_and_wa
 from leica_microscope.camera import Camera
 from leica_microscope.streamer import MemmapWriter
 from leica_microscope.includes.config import getConfig, writeConfigChange
-from leica_microscope.includes.helper_functions import format_partial, format_with_default
+from leica_microscope.includes.helper_functions import format_partial, format_with_default, formatByteNumber
 
 
 class Nowait:
@@ -67,6 +67,8 @@ class Microscope:
     calibrated_proj_speed = None
     iteration_time = None
     first_iteration_time = None
+
+    used_disk_space = 0
 
     def __init__(self, no_camera=False, no_init=False):
         self.config = getConfig(dict(microscope_name="Mic",
@@ -485,6 +487,7 @@ class Microscope:
             metadata.update(add_metadata)
         # and save the file
         tifffile.imsave(filename, img, metadata=metadata)
+        self.used_disk_space += filename.stat().st_size
 
     """ set multiple things at once """
 
@@ -509,6 +512,7 @@ class Microscope:
         im = self.cam.getImage()
         self.memmap_writer.store_image(im)
         self.saveImage(format_with_default(filename), im)
+        print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
 
     def rec_stack(self, filename: str, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0, fast_recording: bool = False, save_projection: bool = False):
         """
@@ -571,6 +575,10 @@ class Microscope:
             self.saveImage(format_with_default(filename, z='MaxProj'), np.max(buffer, axis=0))
             self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype))
             self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype))
+        print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
+
+        # close the shutter after recording
+        #self.setShutter(False)
 
     def rec_projection(self, filename: str, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0,
                        fast_recording: bool = True, save_projection: bool = True):
@@ -740,7 +748,7 @@ class Microscope:
             if passed_time < wait_time:
                 time.sleep(wait_time - passed_time)
         self.iteration_time = time.time()
-        print(f"({int(self.iteration_time-self.first_iteration_time)}s)", end="")
+        print(f"({int(self.iteration_time-self.first_iteration_time)}s) ", end="")
 
     def resetWaitTimer(self):
         self.first_iteration_time = time.time()
