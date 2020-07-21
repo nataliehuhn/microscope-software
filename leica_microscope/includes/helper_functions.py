@@ -360,6 +360,7 @@ class bar:
     def __iter__(self):
         global indent
         indent += 1
+        start_time = time.time()
         while True:
             try:
                 value = next(self.iterable)
@@ -370,8 +371,8 @@ class bar:
             element_count = 10
             element_count_full = int(np.floor(element_count * percent))
             if indent > 0:
-                print("   " * indent, end="")
-            print(self.name + ":", str(self.iteration+1)+"/"+str(self.len))
+                print("\n"+("   " * indent), end="")
+            print(self.name + ":", str(self.iteration+1)+"/"+str(self.len), end=" ")# f"({int(time.time()-start_time)}s)")
             self.iteration += 1
             yield value
 

@@ -50,6 +50,10 @@ elif len(modes) == 1 and len(modes[0]) != 0:
     output("# set the mode for recording")
     output(f"mic.setProperties({formatDict(modes[0], escape=True)})")
 
+if not (config.stack.slice_start == 0 and config.stack.slice_stop == 0) and config.stack.projection is True:
+    output("")
+    output("# calibrate the speed")
+    output(f"mic.rec_calibrate_stack_speed(n_below={config.stack.slice_start}, n_above={config.stack.slice_stop}, slice_thickness_um={config.stack.slice_thickness})")
 
 if config.grid.countx > 1 or config.grid.county > 1:
     output("")

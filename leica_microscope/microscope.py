@@ -66,6 +66,7 @@ class Microscope:
 
     calibrated_proj_speed = None
     iteration_time = None
+    first_iteration_time = None
 
     def __init__(self, no_camera=False, no_init=False):
         self.config = getConfig(dict(microscope_name="Mic",
@@ -587,6 +588,40 @@ class Microscope:
         """
         self.rec_stack(filename, n_below, n_above, slice_thickness_um, fast_recording, save_projection)
 
+    def rec_calibrate_stack_speed(self, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0):
+        """
+        The same as rec_stack but with the defaults set to fast recording and saving of prjections.
+
+        Args:
+            filename(str): the filename where to save the images. It needs to contain {z} which will be replaced by the
+                index of the z slice.
+            n_below: The number of slices below the current position.
+            n_above: The number of slices above the current position.
+            slice_thickness_um: The thickness of a slice in µm.
+            fast_recording: Whether to use fast recording (True) or precise recording (False).
+            save_projection: Whether to save the projections (True) or the single images (False).
+        """
+        slice_thickness_um = slice_thickness_um
+        slice_start = n_below
+        slice_stop = n_above
+
+        # ensure that stack is always recorded from bottom to top
+        if slice_start > slice_stop:
+            slice_start, slice_stop = (slice_stop, slice_start)
+
+        # convert thickness to steps
+        slice_thickness_steps = int(slice_thickness_um / self.getZResolution())
+
+        # convert start/end to steps
+        z_start = slice_start * slice_thickness_steps
+        z_stop = (slice_stop + 2) * slice_thickness_steps
+        n_slices = np.abs(slice_stop - slice_start)
+
+        # get position and move to start
+        z = self.getZPos()
+
+        self.calibrateZSpeedForStack(z, z_start, z_stop, n_slices)
+
     def recordPreciseStackToBuffer(self, z: int, z_start: int, z_stop: int, n_slices: int) -> np.ndarray:
         """
         Record a stack of images in precise mode, e.g. moving to each position separatedly and taking a image when the
@@ -632,31 +667,7 @@ class Microscope:
         """
         # Calculate the approximate speed to get the desired number of images using the current framerate
         if self.calibrated_proj_speed is None:
-            fps = self.cam.getFramerate()
-
-            while self.getZMoving():
-                print("waiting", self.getZMoving())
-                pass
-
-            self.setZSpeed(88200)
-            current_z_speed = self.getZSpeed()
-
-            self.setZPos(z + z_start)
-
-            while self.getZMoving():
-                print("waiting", self.getZMoving())
-                pass
-
-            t = time.time()
-            self.setZPos(z + z_stop)
-
-            while self.getZMoving():
-                print("waiting", self.getZMoving())
-                pass
-            duration_drive = time.time() - t
-            duration_take_images = n_slices / fps
-
-            self.calibrated_proj_speed = int(duration_drive / duration_take_images * current_z_speed)
+            self.calibrateZSpeedForStack(z, z_start, z_stop, n_slices)
 
         # move to start
         self.setZPos(z + z_start)
@@ -680,9 +691,53 @@ class Microscope:
 
         return buffer
 
+    def calibrateZSpeedForStack(self, z: int, z_start: int, z_stop: int, n_slices: int):
+        """
+        Record a stack of images in fast mode, e.g. moving continuously from start to end while recoding. Without precise
+        synchronisation of z position and image.
+
+        Args:
+            z: The current z position.
+            z_start: The z position where to start.
+            z_stop: The z position where to end.
+            n_slices: The number of slices to take.
+
+        Returns:
+            buffer: An ndarray of shape [n_slices, height, width] of the recorded images.
+        """
+        # Calculate the approximate speed to get the desired number of images using the current framerate
+        fps = self.cam.getFramerate()
+
+        while self.getZMoving():
+            pass
+
+        self.setZSpeed(88200)
+        current_z_speed = self.getZSpeed()
+
+        self.setZPos(z + z_start)
+
+        while self.getZMoving():
+            pass
+
+        t = time.time()
+        self.setZPos(z + z_stop)
+
+        while self.getZMoving():
+            pass
+
+        duration_drive = time.time() - t
+        duration_take_images = n_slices / fps
+
+        self.calibrated_proj_speed = int(duration_drive / duration_take_images * current_z_speed)
+
     """ time keeping """
     def waitSinceLast(self, wait_time: float):
         """ Ensure that at least wait_time has passed since the last call. If not wait accordingly. """
-        if self.iteration_time is not None and time.time() - self.iteration_time < wait_time:
-            time.sleep(wait_time - (time.time() - self.iteration_time))
-        self.iteration_time = wait_time
+        if self.first_iteration_time is None:
+            self.first_iteration_time = time.time()
+        if self.iteration_time is not None:
+            passed_time = time.time() - self.iteration_time
+            if passed_time < wait_time:
+                time.sleep(wait_time - passed_time)
+        self.iteration_time = time.time()
+        print(f"({int(self.iteration_time-self.first_iteration_time)}s)", end="")
