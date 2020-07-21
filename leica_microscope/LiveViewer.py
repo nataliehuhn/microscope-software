@@ -1006,7 +1006,7 @@ class Window(QtWidgets.QWidget):
         print("... connected")
 
         self.setWindowTitle('LiveViewer')
-        #self.setWindowIcon(QtGui.QIcon(QtGui.QIcon(os.path.join(icon_path, "LiveViewer.ico"))))
+        self.setWindowIcon(QtGui.QIcon(os.path.join(os.path.dirname(__file__), "icons", "LiveViewer.ico")))
         main_layout = QtWidgets.QHBoxLayout(self)
         left_layout = QtWidgets.QVBoxLayout()
         main_layout.addLayout(left_layout)
