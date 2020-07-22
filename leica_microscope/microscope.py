@@ -213,7 +213,7 @@ class Microscope:
 
     def getDefaultFilename(self, folder: Union[str, Path]) -> str:
         """ Get a default filename with placeholders for datetime, system, rep, pos, x, y, mode, z."""
-        save_filename = r"{datetime}_{system}_rep{repetition:03}_pos{pos:02}_x{x:02}_y{y:02}_mode{mode}_z{z:04}.tif"
+        save_filename = r"{datetime}_{system}_rep{repetition:03}_pos{pos:02}_x{x:02}_y{y:02}_mode{mode}_z{z}.tif"
         # if the timestamp is defined by the command line arguments, take that
         # this is used to ensure that the config and the recode file have the same timestamp as the images
         for arg in sys.argv:
@@ -235,6 +235,8 @@ class Microscope:
     def setPos(self, pos):
         """ Set the XYZ position in steps. """
         x, y, z = pos
+        # wait until the microscope has truly reached the position
+        self.wait_for_stop(self.getMoving)
         try:
             self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
         except FlowError as err:
@@ -434,6 +436,10 @@ class Microscope:
         """ Set the field diaphragm. """
         self.send_command_and_wait("94022 %d" % intensity)
 
+    def isFluo(self) -> bool:
+        """ Check whether the current mode is the fluo mode. """
+        return self.send_command_and_wait("70028", int) == self.MODE_FLUO
+
     def getMode(self) -> Tuple[int, Tuple[int, str]]:
         """ Get the current mode. """
         return self.send_command_and_wait(["70028", "78023"], [int, [int, str]])
@@ -560,9 +566,17 @@ class Microscope:
 
     def rec_image(self, filename: str):
         """ Record a single image to a file. """
-        self.setShutter(True)
+        # open the shutter before recording
+        if self.isFluo():
+            self.setShutter(True)
+
+        # take the image
         im = self.cam.getImage()
-        self.setShutter(False)
+
+        # close the shutter after recording
+        if self.isFluo():
+            self.setShutter(False)
+
         self.memmap_writer.store_image(im)
         self.saveImage(format_with_default(filename), im)
         print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
@@ -591,7 +605,8 @@ class Microscope:
         """
 
         # open the shutter before recording
-        #self.setShutter(True)
+        if self.isFluo():
+            self.setShutter(True)
 
         slice_thickness_um = slice_thickness_um
         slice_start = n_below
@@ -634,7 +649,8 @@ class Microscope:
         print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
 
         # close the shutter after recording
-        #self.setShutter(False)
+        if self.isFluo():
+            self.setShutter(False)
 
     def rec_projection(self, filename: str, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0,
                        fast_recording: bool = True, save_projection: bool = True):
