@@ -175,6 +175,10 @@ class Microscope:
         # get the answer to all these commands
         result = self.send_command_and_wait(commands, formats)
         propertes = {}
+        # try again if nothing was returned...
+        if result is None:
+            result = self.send_command_and_wait(commands, formats)
+
         for v, n in zip(result, names):
             if n not in propertes:
                 propertes[n] = v

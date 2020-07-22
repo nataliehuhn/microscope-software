@@ -253,6 +253,7 @@ class ModuleObjective(QtWidgets.QGroupBox):
         self.updateButtons()
         self.mic.setObjective(i + 1)
         self.parent.update()
+        self.parent.signal_objective_changed.emit()
 
     def updateStatus(self):
         self.index = self.mic.properties["current_objective"]
@@ -1034,6 +1035,72 @@ class ModuleSnap(QtWidgets.QGroupBox):
             print(filename, "saved")
 
 
+class ModuleScaleBar(QtWidgets.QGroupBox):
+
+    def __init__(self, parent):
+        QtWidgets.QWidget.__init__(self)
+        self.parent = parent
+        self.mic = parent.mic
+        self.cam = parent.cam
+
+        self.font = QtGui.QFont()
+        self.font.setPointSize(16)
+
+        self.pixtomu = self.cam.getPixelSize()
+        self.magnification = 1
+
+        self.coupler = 1
+        self.scale = 1
+
+        self.scalebar = QtWidgets.QGraphicsRectItem(0, 0, 1, 1, self.parent.view.hud_lowerRight)
+        self.scalebar.setBrush(QtGui.QBrush(QtGui.QColor("white")))
+        self.scalebar.setPen(QtGui.QPen(QtGui.QColor("white")))
+        self.scalebar.setPos(-20, -20)
+        self.scalebar_text = QtWidgets.QGraphicsTextItem("", self.parent.view.hud_lowerRight)
+        self.scalebar_text.setFont(self.font)
+        self.scalebar_text.setDefaultTextColor(QtGui.QColor("white"))
+
+        print("slef.parent", self.parent.signal_zoom)
+        self.parent.signal_zoom.connect(self.zoomEvent)
+        self.parent.signal_objective_changed.connect(self.updateStatus)
+        self.parent.signal_coupler_changed.connect(self.updateStatus)
+
+        self.updateStatus()
+
+    def updateStatus(self):
+        try:
+            self.magnification = self.mic.getMagnification()
+        except IOError:
+            self.magnification = 1
+
+        try:
+            self.coupler = self.mic.getCoupler()
+        except IOError:
+            self.coupler = 1
+        print("updateStatus", self.magnification, self.coupler)
+        self.updateBar()
+
+    def zoomEvent(self, scale, pos):
+        if self.pixtomu:
+            self.scale = scale
+            self.updateBar()
+
+    def updateBar(self):
+        mu = 100*self.pixtomu/(self.magnification*self.coupler)/self.scale
+        values = [1, 5, 10, 25, 50, 75, 100, 150, 200, 250, 500, 1000, 1500, 2000, 2500, 5000, 10000]
+        old_v = mu
+        for v in values:
+            if mu < v:
+                mu = old_v
+                break
+            old_v = v
+        pixel = mu/(self.pixtomu/(self.magnification*self.coupler))*self.scale
+        self.scalebar.setRect(0, 0, -pixel, 5)
+        self.scalebar_text.setPos(-pixel-20-25, -20-30)
+        self.scalebar_text.setTextWidth(pixel+50)
+        self.scalebar_text.setHtml(u"<center>%d&thinsp;µm</center>" % mu)
+
+
 class Window(QtWidgets.QWidget):
     signal = QtCore.Signal()
     window_settings = None
@@ -1043,7 +1110,7 @@ class Window(QtWidgets.QWidget):
 
     signal_init = QtCore.Signal()
     signal_new_image = QtCore.Signal()
-    signal_objective_changed = QtCore.Signal(int, int, int)
+    signal_objective_changed = QtCore.Signal()
     signal_mode_changed = QtCore.Signal(int)
     signal_aperture_changed = QtCore.Signal(int)
     signal_field_changed = QtCore.Signal(int)
@@ -1055,6 +1122,9 @@ class Window(QtWidgets.QWidget):
     signal_zoom = QtCore.Signal(float, QtCore.QPointF)
     signal_coupler_changed = QtCore.Signal(float)
     signal_callback = QtCore.Signal(tuple)
+
+    def zoomEvent(self, scale, pos):
+        self.signal_zoom.emit(scale, pos)
 
     def update(self):
         self.mic.getAllProperties()
@@ -1112,6 +1182,7 @@ class Window(QtWidgets.QWidget):
         self.last_folder = ""
 
         self.view = QExtendedGraphicsView()
+        self.view.zoomEvent = self.zoomEvent
         self.local_scene = self.view.scene
         self.origin = self.view.origin
         center_layout.addWidget(self.view)
@@ -1131,6 +1202,8 @@ class Window(QtWidgets.QWidget):
         #ModuleSnap(self, right_layout)
         #ModuleProperties(self, right_layout)
         right_layout.addStretch()
+
+        self.module_scalebar = ModuleScaleBar(self)
 
         self.pixmap = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap(1344,1024),self.origin)
 
