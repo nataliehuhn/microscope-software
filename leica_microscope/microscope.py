@@ -244,6 +244,17 @@ class Microscope:
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getMoving)
 
+    def setXYPos(self, x, y):
+        """ Set the XY position in steps. """
+        try:
+            self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y])
+        except FlowError as err:
+            print("FlowError occurred, try to reinit", err.device)
+            self.send_command_and_wait(err.device+"020")
+            self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y])
+        # wait until the microscope has truly reached the position
+        self.wait_for_stop(self.getMoving)
+
     def getMoving(self) -> np.array:
         """ Get the moving state for XYZ. """
         return np.array(self.send_command_and_wait(["72004", "73004", "71004"], [int, int, int])).astype(bool)
@@ -269,9 +280,16 @@ class Microscope:
         try:
             self.send_command_and_wait("72022 %d" % x)
         except FlowError:
-            # in case a flow error occurs, maybe a reset can help
-            self.send_command_and_wait("71020")
-            self.send_command_and_wait("72022 %d" % x)
+            # wait for the x drive to finish its last command before we set a new z position
+            while self.getXMoving():
+                pass
+            try:
+                self.send_command_and_wait("72022 %d" % x)
+            except FlowError:
+                # in case a flow error occurs, maybe a reset can help
+                self.send_command_and_wait("72020")
+                self.send_command_and_wait("72022 %d" % x)
+
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getXMoving)
 
@@ -284,9 +302,16 @@ class Microscope:
         try:
             self.send_command_and_wait("73022 %d" % y)
         except FlowError:
-            # in case a flow error occurs, maybe a reset can help
-            self.send_command_and_wait("71020")
-            self.send_command_and_wait("73022 %d" % y)
+            # wait for the z drive to finish its last command before we set a new z position
+            while self.getYMoving():
+                pass
+            try:
+                self.send_command_and_wait("73022 %d" % y)
+            except FlowError:
+                # in case a flow error occurs, maybe a reset can help
+                self.send_command_and_wait("73020")
+                self.send_command_and_wait("73022 %d" % y)
+
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getYMoving)
 
@@ -299,11 +324,16 @@ class Microscope:
         try:
             self.send_command_and_wait("71022 %d" % z)
         except FlowError:
-            # in case a flow error occurs, maybe a reset can help
-            #self.send_command_and_wait("71020")
+            # wait for the z drive to finish its last command before we set a new z position
             while self.getZMoving():
                 pass
-            self.send_command_and_wait("71022 %d" % z)
+            try:
+                self.send_command_and_wait("71022 %d" % z)
+            except FlowError:
+                # in case a flow error occurs, maybe a reset can help
+                self.send_command_and_wait("71020")
+                self.send_command_and_wait("71022 %d" % z)
+
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getZMoving)
 
@@ -315,7 +345,12 @@ class Microscope:
 
     def setXSpeed(self, speed: int):
         """ Set the speed of the x stage. """
-        self.send_command_and_wait("72032 %d" % speed)
+        try:
+            self.send_command_and_wait("72032 %d" % speed)
+        except FlowError:
+            while self.getXMoving():
+                pass
+            self.send_command_and_wait("72032 %d" % speed)
 
     def getYSpeed(self) -> int:
         """ Get the speed of the y stage. """
@@ -323,7 +358,12 @@ class Microscope:
 
     def setYSpeed(self, speed: int):
         """ Set the speed of the y stage. """
-        self.send_command_and_wait("73032 %d" % speed)
+        try:
+            self.send_command_and_wait("73032 %d" % speed)
+        except FlowError:
+            while self.getYMoving():
+                pass
+            self.send_command_and_wait("73032 %d" % speed)
 
     def getZSpeed(self) -> int:
         """ Get the speed of the z stage. """
@@ -331,7 +371,12 @@ class Microscope:
 
     def setZSpeed(self, speed: int):
         """ Set the speed of the z stage. """
-        self.send_command_and_wait("71032 %d" % speed)
+        try:
+            self.send_command_and_wait("71032 %d" % speed)
+        except FlowError:
+            while self.getZMoving():
+                pass
+            self.send_command_and_wait("71032 %d" % speed)
 
     def getXSpeedMax(self) -> int:
         """ Get the maximal speed of the x stage. """
@@ -727,9 +772,6 @@ class Microscope:
         # Calculate the approximate speed to get the desired number of images using the current framerate
         fps = self.cam.getFramerate()
 
-        while self.getZMoving():
-            pass
-
         self.setZSpeed(88200)
         current_z_speed = self.getZSpeed()
 
@@ -740,9 +782,6 @@ class Microscope:
 
         t = time.time()
         self.setZPos(z + z_stop)
-
-        while self.getZMoving():
-            pass
 
         duration_drive = time.time() - t
         duration_take_images = n_slices / fps

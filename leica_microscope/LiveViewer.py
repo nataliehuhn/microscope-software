@@ -499,8 +499,7 @@ class ModulePosition(QtWidgets.QGroupBox):
             print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
                   ('double' if event.dblclick else 'single', event.button,
                    event.x, event.y, event.xdata, event.ydata))
-            self.mic.setXPos(int(event.xdata))
-            self.mic.setYPos(int(event.ydata))
+            self.mic.setXYPos(int(event.xdata), int(event.ydata))
 
         cid = self.plot.figure.canvas.mpl_connect('button_press_event', onclick)
         self.ax = ax
