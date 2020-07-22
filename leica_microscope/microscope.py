@@ -209,7 +209,7 @@ class Microscope:
 
     def getDefaultFilename(self, folder: Union[str, Path]) -> str:
         """ Get a default filename with placeholders for datetime, system, rep, pos, x, y, mode, z."""
-        save_filename = r"{datetime}_{system}_rep{repetition:03}_pos{pos:02}_x{x:2}_y{y:2}_mode{mode}_z{z:4}.tif"
+        save_filename = r"{datetime}_{system}_rep{repetition:03}_pos{pos:02}_x{x:02}_y{y:02}_mode{mode}_z{z:04}.tif"
         # if the timestamp is defined by the command line arguments, take that
         # this is used to ensure that the config and the recode file have the same timestamp as the images
         for arg in sys.argv:
@@ -296,7 +296,9 @@ class Microscope:
             self.send_command_and_wait("71022 %d" % z)
         except FlowError:
             # in case a flow error occurs, maybe a reset can help
-            self.send_command_and_wait("71020")
+            #self.send_command_and_wait("71020")
+            while self.getZMoving():
+                pass
             self.send_command_and_wait("71022 %d" % z)
         # wait until the microscope has truly reached the position
         self.wait_for_stop(self.getZMoving)
@@ -509,7 +511,9 @@ class Microscope:
 
     def rec_image(self, filename: str):
         """ Record a single image to a file. """
+        self.setShutter(True)
         im = self.cam.getImage()
+        self.setShutter(False)
         self.memmap_writer.store_image(im)
         self.saveImage(format_with_default(filename), im)
         print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
@@ -536,6 +540,9 @@ class Microscope:
             fast_recording: Whether to use fast recording (True) or precise recording (False).
             save_projection: Whether to save the projections (True) or the single images (False).
         """
+
+        # open the shutter before recording
+        #self.setShutter(True)
 
         slice_thickness_um = slice_thickness_um
         slice_start = n_below

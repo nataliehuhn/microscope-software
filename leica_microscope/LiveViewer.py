@@ -1,6 +1,8 @@
 from __future__ import division, print_function
 import qtawesome as qta
 import sys
+from pathlib import Path
+import json
 
 """ some magic to prevent PyQt5 from swallowing exceptions """
 # Back up the reference to the exceptionhook
@@ -408,6 +410,7 @@ class ModuleFilters(QtWidgets.QGroupBox):
         if self.mic.properties["current_filter"]:
             self.buttons[self.mic.properties["current_filter"]-1].setChecked(True)
 
+
 class ModulePosition(QtWidgets.QGroupBox):
     z_conversion = 0.003800
     x_conversion = 0.13818360
@@ -423,6 +426,15 @@ class ModulePosition(QtWidgets.QGroupBox):
 
         self.layout_main = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout_main)
+
+        self.combo_box = QtWidgets.QComboBox()
+        self.combo_box.currentIndexChanged.connect(self.selectPlateData)
+        self.layout_main.addWidget(self.combo_box)
+
+        self.button_add_centers = QtWidgets.QPushButton("add center positions")
+        self.button_add_centers.clicked.connect(self.addCenters)
+        self.layout_main.addWidget(self.button_add_centers)
+
         self.layout = QtWidgets.QHBoxLayout()
         self.layout_main.addLayout(self.layout)
         self.layout2 = QtWidgets.QHBoxLayout()
@@ -481,10 +493,27 @@ class ModulePosition(QtWidgets.QGroupBox):
         ax.set_xticks([])
         ax.set_xlim(919500, 0)
         ax.set_ylim(600750, 0)
-        circle1 = plt.Circle((np.mean([276665, 188642]), np.mean([194082, 106795])), (276665-188642)/2, color='lightgray', ec="gray")
-        ax.add_artist(circle1)
-        self.plot.figure.axes[0].set_aspect('equal', 'box')
+
+        def onclick(event):
+            print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
+                  ('double' if event.dblclick else 'single', event.button,
+                   event.x, event.y, event.xdata, event.ydata))
+            self.mic.setXPos(int(event.xdata))
+            self.mic.setYPos(int(event.ydata))
+
+        cid = self.plot.figure.canvas.mpl_connect('button_press_event', onclick)
         self.ax = ax
+
+        self.positions = []
+        self.list = QtWidgets.QListWidget()
+
+        self.plate_data = None
+        self.list_plate_data = []
+        for file in Path(__file__).parent.glob("plate_data*.json"):
+            with file.open("r") as fp:
+                plate_data = json.load(fp)
+            self.list_plate_data.append(plate_data)
+            self.combo_box.addItem(plate_data["name"])
 
         #self.parent.signal_init.connect(self.init)
         #self.init()
@@ -500,8 +529,8 @@ class ModulePosition(QtWidgets.QGroupBox):
         line.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.layout_main.addWidget(line)
 
-        self.positions = []
-        self.list = QtWidgets.QListWidget()
+        self.list.keyPressEvent_old = self.list.keyPressEvent
+        self.list.keyPressEvent = self.listKeyPress
         #self.list.itemSelectionChanged.connect(self.changePosition)
         self.layout_main.addWidget(self.list)
         button_layout = QtWidgets.QHBoxLayout()
@@ -528,6 +557,64 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.loadFile(positions_file)
 
         self.parent.signal.connect(self.updateStatus)
+        self.updateList()
+
+    def selectPlateData(self):
+        index = self.combo_box.currentIndex()
+
+        plate_data = self.list_plate_data[index]
+
+        self.plate_data = plate_data
+
+        self.plot.figure.axes[0].set_aspect('equal', 'box')
+
+        self.ax.cla()
+        for well in plate_data["wells"]:
+            x, y, r = well
+            circle1 = plt.Circle((x, y), r, color='lightgray', ec="gray")
+            self.ax.add_artist(circle1)
+            self.ax.plot(x, y, "+", color="gray", zorder=10)
+
+        border = []
+        w = plate_data["extent"][1] - plate_data["extent"][0]
+        h = plate_data["extent"][3] - plate_data["extent"][2]
+        corner_size = w * 0.08
+        border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
+        border.append([plate_data["extent"][1], plate_data["extent"][2]])
+        border.append([plate_data["extent"][1], plate_data["extent"][3]])
+        border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][3]])
+        border.append([plate_data["extent"][0], plate_data["extent"][3] + corner_size])
+        border.append([plate_data["extent"][0], plate_data["extent"][2] - corner_size])
+        border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
+        border = np.array(border)
+
+        self.ax.plot(border[:, 0], border[:, 1], "-", color="gray")
+
+        self.plot_line, = self.plot.figure.gca().plot(0, 0, 'r+', ms=10)
+        self.plot_line2, = self.plot.figure.gca().plot([], [], 'bx', ms=5)
+        self.plot_line3, = self.plot.figure.gca().plot([0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 'k-', ms=5)
+
+        self.ax.set_xlim(plate_data["extent"][0] - w * 0.01, plate_data["extent"][1] + w * 0.01)
+        self.ax.set_ylim(plate_data["extent"][2] - h * 0.01, plate_data["extent"][3] + h * 0.01)
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+
+        self.updateList()
+
+    def listKeyPress(self, event):
+        if event.key() == QtCore.Qt.Key_Return:
+            self.addPosition()
+        if event.key() == QtCore.Qt.Key_G:
+            self.gotoPosition()
+        if event.key() == QtCore.Qt.Key_Delete:
+            self.deletePosition()
+        return self.list.keyPressEvent_old(event)
+
+    def addCenters(self):
+        z = self.mic.getZPos()
+        self.positions = []
+        for x, y, r in self.plate_data["wells"]:
+            self.positions.append([int(x), int(y), z])
         self.updateList()
 
     def addPosition(self):
@@ -561,6 +648,12 @@ class ModulePosition(QtWidgets.QGroupBox):
                 self.mic.setPos(self.positions[index])
 
     def updateList(self):
+        selections = self.list.selectedItems()
+        if len(selections) == 0 or self.list.currentRow() == self.list.count() - 1:
+            row = 0
+        else:
+            row = self.list.currentRow()
+
         self.list.clear()
         for index, position in enumerate(self.positions):
             item = QtWidgets.QListWidgetItem(qta.icon("fa.crosshairs"), "%2d (x: %6d, y: %6d, z: %6d)" % (index, position[0], position[1], position[2]), self.list)
@@ -568,6 +661,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.plot_line2.set_data([p[0] for p in self.positions], [p[1] for p in self.positions])
         self.plot.draw()
         self.saveFile(positions_file)
+        self.list.setCurrentRow(row)
 
     def ButtonSave(self):
         if len(self.positions) == 0:
