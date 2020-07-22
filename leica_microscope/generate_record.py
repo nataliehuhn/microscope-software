@@ -26,6 +26,7 @@ print_with_border("generate code")
 
 output(f"""
 import numpy as np
+import time
 from leica_microscope.includes.helper_functions import format_partial, bar
 from leica_microscope.microscope import Microscope
 
@@ -119,14 +120,26 @@ if config.grid.countx > 1 or config.grid.county > 1:
 
 if config.stack.slice_start == 0 and config.stack.slice_stop == 0:
     output("")
+    if config.general.wait_before_image:
+        output("# wait before image")
+        output(f"time.sleep({config.general.wait_before_image})")
+        output("")
     output("# record a single image")
     output(f"mic.rec_image(format_partial(filename, {formatDict(properties)}))")
 elif config.stack.projection is True:
     output("")
+    if config.general.wait_before_image:
+        output("# wait before image")
+        output(f"time.sleep({config.general.wait_before_image})")
+        output("")
     output("# record a projection stack")
     output(f"mic.rec_projection(format_partial(filename, {formatDict(properties)}), n_below={config.stack.slice_start}, n_above={config.stack.slice_stop}, slice_thickness_um={config.stack.slice_thickness})")
 else:
     output("")
+    if config.general.wait_before_image:
+        output("# wait before image")
+        output(f"time.sleep({config.general.wait_before_image})")
+        output("")
     output("# record a projection stack")
     output(f"mic.rec_stack(format_partial(filename, {formatDict(properties)}), n_below={config.stack.slice_start}, n_above={config.stack.slice_stop}, slice_thickness_um={config.stack.slice_thickness})")
 
