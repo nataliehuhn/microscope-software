@@ -42,6 +42,14 @@ class Camera(CameraBase):
     """ recording """
 
     def getVideoBuffer(self, count) -> np.ndarray:
+        # alternative code to generate a buffer
+        """
+        # get the buffer where to store the images
+        lucam.StreamVideoControl('start_streaming')
+        buffer, pdata = ndarray(lucam._streaming, lucam._byteorder, None, True, numframes)
+        lucam.StreamVideoControl('stop_streaming')
+        return buffer
+        """
         frameformat, framerate = self.lucam.GetFormat()
         pixeldepth = self.lucam.GetTruePixelDepth()
         format = np.uint8
@@ -50,9 +58,41 @@ class Camera(CameraBase):
         return np.zeros([count, frameformat.height, frameformat.width], dtype=format)
 
     def getVideo(self, buffer):
+        # the TakeVideo unfortunately does cause a timeout
+        """
         self.lucam.StreamVideoControl('start_streaming')  # streaming without display
         self.lucam.TakeVideo(None, out=buffer)
         self.lucam.StreamVideoControl('stop_streaming')
+        """
+        # so we now use the streamer callback
+        numframes = buffer.shape[0]
+        N = 0
+        running = True
+
+        # define a callback to copy the image data into the buffer
+        def streaming_callback(context, data, size):
+            nonlocal N, running
+            # check how many frames are recorded yet
+            if N < numframes:
+                # copy the data to the buffer
+                buffer[N, :, :] = np.ctypeslib.as_array(data, shape=(size,)).reshape(*buffer[0].shape)
+            else:
+                running = False
+            N += 1
+
+        # add the callback
+        callbackid = lucam.AddStreamingCallback(streaming_callback)
+
+        # start the streaming
+        self.lucam.StreamVideoControl('start_streaming')
+        # wait for the callback to count enough frames
+        while running:
+            time.sleep(0.01)
+        # stop the streaming
+        self.lucam.StreamVideoControl('stop_streaming')
+        # and remove the callback
+        self.lucam.RemoveStreamingCallback(callbackid)
+
         if self.config["flip_y"]:
             buffer[:] = buffer[::-1]
         return buffer >> 2
