@@ -1,4 +1,5 @@
 from lucam import Lucam, API
+import time
 import numpy as np
 
 from leica_microscope.includes.config import getConfig
@@ -23,6 +24,7 @@ class Fast:
     def __call__(self, *args, **kwargs):
         pass
 
+
 class Camera(CameraBase):
     def __init__(self):
         super().__init__()
@@ -31,6 +33,28 @@ class Camera(CameraBase):
         self.resetFormat()
 
         self.fast_recording = Fast(self, self.lucam)
+
+        self.callbackid = None
+        self.streaming_callback = None
+        class PauseStreaming:
+            def __init__(self, cam):
+                self.cam = cam
+
+            def __enter__(self):
+                self.callbackid = self.cam.callbackid
+                self.streaming_callback = self.cam.streaming_callback
+
+                if self.callbackid is not None:
+                    self.cam.stopStreaming()
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if self.callbackid is not None:
+                    self.cam.startStreaming(self.streaming_callback)
+
+            def __call__(self, *args, **kwargs):
+                return self
+
+        self.pause_streaming = PauseStreaming(self)
 
     def resetFormat(self):
         frameformat, framerate = self.lucam.GetFormat()
@@ -56,7 +80,7 @@ class Camera(CameraBase):
         if pixeldepth > 8:
             format = np.uint16
         return np.zeros([count, frameformat.height, frameformat.width], dtype=format)
-
+    
     def getVideo(self, buffer):
         # the TakeVideo unfortunately does cause a timeout
         """
@@ -81,7 +105,7 @@ class Camera(CameraBase):
             N += 1
 
         # add the callback
-        callbackid = lucam.AddStreamingCallback(streaming_callback)
+        callbackid = self.lucam.AddStreamingCallback(streaming_callback)
 
         # start the streaming
         self.lucam.StreamVideoControl('start_streaming')
@@ -94,8 +118,39 @@ class Camera(CameraBase):
         self.lucam.RemoveStreamingCallback(callbackid)
 
         if self.config["flip_y"]:
-            buffer[:] = buffer[::-1]
+            buffer = buffer[::-1]
+        if self.config["flip_x"]:
+            buffer = buffer[:, ::-1]
         return buffer >> 2
+
+    def startStreaming(self, callback):
+        # get the shape of the images
+        frameformat, framerate = self.lucam.GetFormat()
+        shape = (frameformat.height, frameformat.width)
+        dtype = self.getDtype()
+
+        # define a callback to transform the data into a numpy image
+        def streaming_callback(context, data, size):
+            im = np.ctypeslib.as_array(data, shape=(size,)).view(dtype=dtype).reshape(*shape)
+            if self.config["flip_y"]:
+                im = im[::-1]
+            if self.config["flip_x"]:
+                im = im[:, ::-1]
+            callback(im >> 2)
+
+        # add the callback
+        self.callbackid = self.lucam.AddStreamingCallback(streaming_callback)
+        self.streaming_callback = callback
+
+        # start the streaming
+        self.lucam.StreamVideoControl('start_streaming')
+
+    def stopStreaming(self):
+        # stop the streaming
+        self.lucam.StreamVideoControl('stop_streaming')
+        # and remove the callback
+        self.lucam.RemoveStreamingCallback(self.callbackid)
+        self.callbackid = None
 
     def getImage(self):
         if self.fast_enabled is True:
@@ -104,6 +159,8 @@ class Camera(CameraBase):
             im = self.lucam.TakeSnapshot() >> 2
         if self.config["flip_y"]:
             im = im[::-1]
+        if self.config["flip_x"]:
+            im = im[:, ::-1]
         return im
 
     """ properties """
