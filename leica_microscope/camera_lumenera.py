@@ -92,6 +92,7 @@ class Camera(CameraBase):
         numframes = buffer.shape[0]
         N = 0
         running = True
+        dtype = self.getDtype()
 
         # define a callback to copy the image data into the buffer
         def streaming_callback(context, data, size):
@@ -99,7 +100,7 @@ class Camera(CameraBase):
             # check how many frames are recorded yet
             if N < numframes:
                 # copy the data to the buffer
-                buffer[N, :, :] = np.ctypeslib.as_array(data, shape=(size,)).reshape(*buffer[0].shape)
+                buffer[N, :, :] = np.ctypeslib.as_array(data, shape=(size,)).view(dtype=dtype).reshape(*buffer[0].shape)
             else:
                 running = False
             N += 1
