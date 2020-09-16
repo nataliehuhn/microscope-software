@@ -803,6 +803,8 @@ class Microscope:
         duration_take_images = n_slices / fps
 
         self.calibrated_proj_speed = int(duration_drive / duration_take_images * current_z_speed)
+        print("self.calibrated_proj_speed", self.calibrated_proj_speed, duration_drive, duration_take_images)
+        self.setZPos(z)
 
     """ time keeping """
     def waitSinceLast(self, wait_time: float):
