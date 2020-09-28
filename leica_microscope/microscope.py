@@ -788,7 +788,7 @@ class Microscope:
         # Calculate the approximate speed to get the desired number of images using the current framerate
         fps = self.cam.getFramerate()
 
-        self.setZSpeed(88200)
+        self.setZSpeed(8820000)
         current_z_speed = self.getZSpeed()
 
         self.setZPos(z + z_start)
