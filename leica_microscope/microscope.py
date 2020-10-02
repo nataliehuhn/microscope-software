@@ -237,17 +237,33 @@ class Microscope:
 
     def setPos(self, pos):
         """ Set the XYZ position in steps. """
-        x, y, z = pos
-        # wait until the microscope has truly reached the position
-        self.wait_for_stop(self.getMoving)
-        try:
-            self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
-        except FlowError as err:
-            print("FlowError occurred, try to reinit", err.device)
-            self.send_command_and_wait(err.device+"020")
-            self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
-        # wait until the microscope has truly reached the position
-        self.wait_for_stop(self.getMoving)
+        for i in range(3):
+            try:
+                x, y, z = pos
+                # wait until the microscope has truly reached the position
+                self.wait_for_stop(self.getMoving)
+                try:
+                    self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
+                except FlowError as err:
+                    print("FlowError occurred, try to reinit", err.device)
+                    self.send_command_and_wait(err.device+"020")
+                    self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y, "71022 %d" % z])
+                # wait until the microscope has truly reached the position
+                self.wait_for_stop(self.getMoving)
+                # get the new position
+                new_pos = self.getPos()
+                print("pos", pos, "new_pos", new_pos)
+                # check if the new position is the target position
+                if np.all(pos != new_pos):
+                    print("not equal")
+                    # try again :-(
+                    continue
+                # if we have arrived stop the loop
+                break
+            # some flow error inbetween? well we nevertheless try again
+            except FlowError as err:
+                print(err, file=sys.stderr)
+                time.sleep(1)
 
     def setXYPos(self, x, y):
         """ Set the XY position in steps. """
@@ -326,21 +342,33 @@ class Microscope:
 
     def setZPos(self, z: int):
         """ Set the z position in steps. """
-        try:
-            self.send_command_and_wait("71022 %d" % z)
-        except FlowError:
-            # wait for the z drive to finish its last command before we set a new z position
-            while self.getZMoving():
-                pass
+        for i in range(3):
             try:
                 self.send_command_and_wait("71022 %d" % z)
             except FlowError:
-                # in case a flow error occurs, maybe a reset can help
-                self.send_command_and_wait("71020")
-                self.send_command_and_wait("71022 %d" % z)
+                # wait for the z drive to finish its last command before we set a new z position
+                while self.getZMoving():
+                    pass
+                try:
+                    self.send_command_and_wait("71022 %d" % z)
+                except FlowError:
+                    # in case a flow error occurs, maybe a reset can help
+                    self.send_command_and_wait("71020")
+                    self.send_command_and_wait("71022 %d" % z)
 
-        # wait until the microscope has truly reached the position
-        self.wait_for_stop(self.getZMoving)
+            # wait until the microscope has truly reached the position
+            self.wait_for_stop(self.getZMoving)
+
+            if self.wait:
+                new_z = self.getZPos()
+
+                # check if the new position is the target position
+                if z != new_z:
+                    print("not equal", z, new_z)
+                    # try again :-(
+                    continue
+            # we are done
+            break
 
     """ speed adjustments """
 
@@ -606,7 +634,6 @@ class Microscope:
             fast_recording: Whether to use fast recording (True) or precise recording (False).
             save_projection: Whether to save the projections (True) or the single images (False).
         """
-
         # open the shutter before recording
         if self.isFluo():
             self.setShutter(True)
@@ -791,22 +818,35 @@ class Microscope:
         # Calculate the approximate speed to get the desired number of images using the current framerate
         fps = self.cam.getFramerate()
 
+        buffer = self.cam.getVideoBuffer(n_slices)
+        start_time = time.time()
+        self.cam.getVideo(buffer)
+        duration_take_images = time.time() - start_time
+
         self.setZSpeed(8820000)
-        current_z_speed = self.getZSpeed()
+        for i in range(10):
 
-        self.setZPos(z + z_start)
+            current_z_speed = self.getZSpeed()
 
-        while self.getZMoving():
-            pass
+            self.setZPos(z + z_start)
 
-        t = time.time()
-        self.setZPos(z + z_stop)
+            while self.getZMoving():
+                pass
 
-        duration_drive = time.time() - t
-        duration_take_images = n_slices / fps
+            t = time.time()
+            self.setZPos(z + z_stop)
 
-        self.calibrated_proj_speed = int(duration_drive / duration_take_images * current_z_speed)
-        print("self.calibrated_proj_speed", self.calibrated_proj_speed, duration_drive, duration_take_images)
+            while self.getZMoving():
+                pass
+
+            duration_drive = time.time() - t
+            duration_take_images2 = n_slices / fps
+
+            self.calibrated_proj_speed = int(duration_drive / duration_take_images * current_z_speed)
+            self.setZSpeed(self.calibrated_proj_speed)
+            print("self.calibrated_proj_speed", self.calibrated_proj_speed, duration_drive / duration_take_images, n_slices, fps, duration_drive, duration_take_images, duration_take_images2, current_z_speed)
+            if np.abs(duration_drive / duration_take_images - 1) < 0.01:
+                break
         self.setZPos(z)
 
     """ time keeping """
