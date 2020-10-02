@@ -570,7 +570,8 @@ class Microscope:
         filename.parent.mkdir(exist_ok=True)
         # gather the metadata
         metadata = self.getMetadata()
-        metadata.update(self.cam.getMetadata())
+        if self.cam is not None:
+            metadata.update(self.cam.getMetadata())
         if add_metadata is not None:
             metadata.update(add_metadata)
         # and save the file

@@ -579,13 +579,22 @@ class ModulePosition(QtWidgets.QGroupBox):
         w = plate_data["extent"][1] - plate_data["extent"][0]
         h = plate_data["extent"][3] - plate_data["extent"][2]
         corner_size = w * 0.08
-        border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
-        border.append([plate_data["extent"][1], plate_data["extent"][2]])
-        border.append([plate_data["extent"][1], plate_data["extent"][3]])
-        border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][3]])
-        border.append([plate_data["extent"][0], plate_data["extent"][3] + corner_size])
-        border.append([plate_data["extent"][0], plate_data["extent"][2] - corner_size])
-        border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
+        if 0:
+            border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
+            border.append([plate_data["extent"][1], plate_data["extent"][2]])
+            border.append([plate_data["extent"][1], plate_data["extent"][3]])
+            border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][3]])
+            border.append([plate_data["extent"][0], plate_data["extent"][3] + corner_size])
+            border.append([plate_data["extent"][0], plate_data["extent"][2] - corner_size])
+            border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
+        else:
+            border.append([plate_data["extent"][0], plate_data["extent"][2]])
+            border.append([plate_data["extent"][1] - corner_size, plate_data["extent"][2]])
+            border.append([plate_data["extent"][1], plate_data["extent"][2] - corner_size])
+            border.append([plate_data["extent"][1], plate_data["extent"][3] + corner_size])
+            border.append([plate_data["extent"][1] - corner_size, plate_data["extent"][3]])
+            border.append([plate_data["extent"][0], plate_data["extent"][3]])
+            border.append([plate_data["extent"][0], plate_data["extent"][2]])
         border = np.array(border)
 
         self.ax.plot(border[:, 0], border[:, 1], "-", color="gray")
@@ -1057,9 +1066,9 @@ class ModuleSaveImage(QtWidgets.QGroupBox):
 
         self.button_save_image.clicked.connect(self.ButtonSaveImage)
 
-        self.updateButtonContinuosText()
+        #self.updateButtonContinuosText()
 
-        self.parent.signal_new_image.connect(self.updateStatus)
+        #self.parent.signal_new_image.connect(self.updateStatus)
 
     def ButtonSaveImage(self):
         save_filename = r"{datetime}.tif".format(datetime=time.strftime("%Y%m%d-%H%M%S", time.localtime()))
@@ -1239,7 +1248,7 @@ class Window(QtWidgets.QWidget):
         ModuleExposure(self, right_layout)
         ModuleROI(self, right_layout)
         ModuleHistogram(self, right_layout, self.cam.getMaxValue())
-        ModuleSaveImage(self, right_layout, self.cam.getMaxValue())
+        ModuleSaveImage(self, right_layout)
         #ModuleSnap(self, right_layout)
         #ModuleProperties(self, right_layout)
         right_layout.addStretch()
