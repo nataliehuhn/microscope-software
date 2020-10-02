@@ -691,8 +691,8 @@ class ModulePosition(QtWidgets.QGroupBox):
             filename = str(fileName[0])
         else:
             filename = str(fileName)
-        if os.path.exists(fileName):
-            self.loadFile(fileName)
+        if os.path.exists(fileName[0]):
+            self.loadFile(fileName[0])
 
     def loadFile(self, fileName):
         print("Loading:", fileName)
@@ -1033,6 +1033,47 @@ class ModuleSnap(QtWidgets.QGroupBox):
             mmc.saveImage(filename, self.parent.im, microscope=mic)
             print(filename, "saved")
 
+class ModuleSaveImage(QtWidgets.QGroupBox):
+    last_folder = ""
+
+    def __init__(self, parent, layout):
+        QtWidgets.QWidget.__init__(self)
+        self.parent = parent
+        layout.addWidget(self)
+        self.setTitle("Record")
+        self.mic = parent.mic
+        self.layout = QtWidgets.QVBoxLayout()
+        self.setLayout(self.layout)
+        self.setMinimumWidth(200)
+
+        self.layout1 = QtWidgets.QHBoxLayout()
+        self.layout.addLayout(self.layout1)
+
+        self.layout2 = QtWidgets.QHBoxLayout()
+        self.layout.addLayout(self.layout2)
+
+        self.button_save_image = QtWidgets.QPushButton("Save Image")
+        self.layout2.addWidget(self.button_save_image)
+
+        self.button_save_image.clicked.connect(self.ButtonSaveImage)
+
+        self.updateButtonContinuosText()
+
+        self.parent.signal_new_image.connect(self.updateStatus)
+
+    def ButtonSaveImage(self):
+        save_filename = r"{datetime}.tif".format(datetime=time.strftime("%Y%m%d-%H%M%S", time.localtime()))
+
+        filename = os.path.join(self.last_folder, save_filename)
+        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", filename, "TIF images (*.tif)")
+        if isinstance(filename, tuple):
+            filename = str(filename[0])
+        else:
+            filename = str(filename)
+        if filename:
+            self.last_folder = os.path.dirname(filename)
+            self.mic.saveImage(filename, self.parent.im)
+            print(filename, "saved")
 
 class ModuleScaleBar(QtWidgets.QGroupBox):
 
@@ -1198,6 +1239,7 @@ class Window(QtWidgets.QWidget):
         ModuleExposure(self, right_layout)
         ModuleROI(self, right_layout)
         ModuleHistogram(self, right_layout, self.cam.getMaxValue())
+        ModuleSaveImage(self, right_layout, self.cam.getMaxValue())
         #ModuleSnap(self, right_layout)
         #ModuleProperties(self, right_layout)
         right_layout.addStretch()
@@ -1427,7 +1469,7 @@ class Timeit:
 
 if __name__ == '__main__':
     if sys.platform[:3] == 'win':
-        myappid = 'fabrybiophysics.clickpoints' # arbitrary string
+        myappid = 'fabrybiophysics.liveviewer' # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     window = Window()
     window.show()
