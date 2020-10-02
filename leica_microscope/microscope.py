@@ -224,6 +224,9 @@ class Microscope:
         else:
             timestamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
         save_filename = format_partial(save_filename, datetime=timestamp, system=self.getMicroscopeName())
+
+        Path(folder).mkdir(exist_ok=True)
+
         return str(Path(folder) / save_filename)
 
     """ positions """
