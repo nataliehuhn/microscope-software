@@ -213,6 +213,25 @@ class MemmapReader:
     def stop(self):
         if self.streamer is not None:
             self.streamer.kill()
+        if self.stream_thread is not None:
+            self.do_streaming = False
+            self.stream_thread.join()
+
+    stream_thread = None
+    do_streaming = True
+
+    def setStreamCallback(self, callback):
+        from threading import Thread
+        self.stream_callback = callback
+        self.stream_thread = Thread(target=self.streaming, args=())
+        self.stream_thread.start()
+
+    def streaming(self):
+        while self.do_streaming:
+            im = self.getImage()
+            if im is not None:
+                self.stream_callback(im)
+            time.sleep(0.0001)
 
     def getImage(self):
         # if no process is connected to the camera, start the streamer

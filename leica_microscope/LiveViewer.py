@@ -1314,11 +1314,12 @@ class Window(QtWidgets.QWidget):
 
             #self.UpdateExposureTime()
 
-        if 1:
+        if 0:
             #self.cam.fast_recording.__enter__()
             self.timer = QtCore.QTimer(self)
             self.timer.timeout.connect(self.updateview)
             self.timer.start(100)
+        self.cam.setStreamCallback(self.updateview)
         
         #self.last_mode = self.GetMode()
         #mic.connectEvent(self.Event)
@@ -1422,33 +1423,27 @@ class Window(QtWidgets.QWidget):
 
             #self.label_mode.setText("%.2f fps Illumination: %3.1f%% (%d, %dms, %d)" % (mmc.memmap.fps, 100*np.amax(self.im)/(2**mmc.config["BitDepth"]), np.amax(self.im), mmc.memmap.exposure, mmc.memmap.gain))
 
-    def updateview(self):
-
-        if 1:
-            #if mmc.getRemainingImageCount():
-
-            im = self.cam.getImage()
-
-            if im is None:
-                return
-            self.im = im# >> 2
-
-            # calculate maximum and histogram
-
-            self.im_max = np.amax(self.im)
-            #print("range", np.amin(self.im), np.amax(self.im))
-            self.im_hist, self.im_bins = np.histogram(self.im[::4, ::4], bins=np.arange(0, self.cam.getMaxValue() + 20, 10),
-                                                  density=True)
-            # display the iamge
+    def updateview(self, im):
 
 
-            self.showImage()
-            self.view.setExtend(self.im.shape[1], self.im.shape[0])
+        if im is None:
+            return
+        self.im = im# >> 2
+
+        # calculate maximum and histogram
+
+        self.im_max = np.amax(self.im)
+        #print("range", np.amin(self.im), np.amax(self.im))
+        self.im_hist, self.im_bins = np.histogram(self.im[::4, ::4], bins=np.arange(0, self.cam.getMaxValue() + 20, 10),
+                                              density=True)
+        # display the iamge
 
 
+        self.showImage()
+        self.view.setExtend(self.im.shape[1], self.im.shape[0])
 
-            self.signal_new_image.emit()
-            #self.CheckBlocked()
+        self.signal_new_image.emit()
+        #self.CheckBlocked()
         return
         if self.pan_offsetX or self.pan_offsetY:
             PixToMu = sensor_size/mic.getEffectiveMagnification()
