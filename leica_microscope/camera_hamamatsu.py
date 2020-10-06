@@ -31,6 +31,28 @@ class Camera(CameraBase):
 
         self.fast_recording = Fast(self, self.camera)
 
+        self.callbackid = None
+        self.streaming_callback = None
+        class PauseStreaming:
+            def __init__(self, cam):
+                self.cam = cam
+
+            def __enter__(self):
+                self.do_streaming = self.cam.do_streaming
+                self.streaming_callback = self.cam.streaming_callback
+
+                if self.do_streaming is True:
+                    self.cam.stopStreaming()
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if self.do_streaming is True:
+                    self.cam.startStreaming(self.streaming_callback)
+
+            def __call__(self, *args, **kwargs):
+                return self
+
+        self.pause_streaming = PauseStreaming(self)
+
     """ recording """
 
     def getVideoBuffer(self, count) -> np.ndarray:
@@ -52,7 +74,34 @@ class Camera(CameraBase):
 
         if self.config["flip_y"]:
             buffer[:] = buffer[::-1]
+        if self.config["flip_x"]:
+            buffer = buffer[:, ::-1]
         return buffer >> 2
+
+    do_streaming = False
+    def startStreaming(self, callback):
+        self.streaming_callback = callback
+        self.do_streaming = True
+
+        # start the streaming
+        self.camera.startAcquisition()
+        from threading import Thread
+        def streaming():
+            while self.do_streaming:
+                [frames, dims] = self.camera.getFrames()
+                for aframe in frames:
+                    im = aframe.getData().reshape(dims[1], dims[0])
+                    if self.config["flip_y"]:
+                        im = im[::-1]
+                    if self.config["flip_x"]:
+                        im = im[:, ::-1]
+                    callback(im)
+        self.stream_thread = Thread(target=streaming)
+        self.stream_thread.start()
+
+    def stopStreaming(self):
+        self.camera.stopAcquisition()
+        self.do_streaming = False
 
     def getImage(self):
         if self.fast_enabled is True:
@@ -66,6 +115,8 @@ class Camera(CameraBase):
 
         if self.config["flip_y"]:
             im = im[::-1]
+        if self.config["flip_x"]:
+            im = im[:, ::-1]
         return im
 
     """ properties """
@@ -100,10 +151,10 @@ class Camera(CameraBase):
         self.camera.setSubArrayMode()
 
     def exposure(self) -> float:
-        return self.camera.getPropertyValue('exposure_time')[0]
+        return self.camera.getPropertyValue('exposure_time')[0]*1e3
 
     def setExposure(self, exposure: float):
-        self.camera.setPropertyValue("exposure_time", exposure)
+        self.camera.setPropertyValue("exposure_time", exposure*1e-3)
 
     def get_exposure_range(self):
         return self.camera.getPropertyRange("exposure_time")
