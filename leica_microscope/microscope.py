@@ -557,8 +557,7 @@ class Microscope:
         # System
         self.metadata["ComputerName"] = socket.gethostname()
         self.metadata["MicroscopeName"] = self.config["microscope_name"]
-        self.metadata["Time"] = time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-%06d" % (
-                    (time.time() - int(time.time())) * 1e6)
+        self.metadata["Time"] = time.strftime("%Y%m%d-%H%M%S", time.localtime()) + "-%06d" % ((time.time() - int(time.time())) * 1e6)
         return self.metadata
 
     """ image saveing """
