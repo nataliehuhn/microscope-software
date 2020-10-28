@@ -721,6 +721,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         else:
             self.positions[self.list.currentRow()] = position
         self.updateList()
+        self.list.setCurrentRow(len(self.positions))
 
     def deletePosition(self):
         selections = self.list.selectedItems()
@@ -749,7 +750,7 @@ class ModulePosition(QtWidgets.QGroupBox):
 
     def updateList(self):
         selections = self.list.selectedItems()
-        if len(selections) == 0 or self.list.currentRow() == self.list.count() - 1:
+        if len(selections) == 0:# or self.list.currentRow() == self.list.count() - 1:
             row = 0
         else:
             row = self.list.currentRow()
