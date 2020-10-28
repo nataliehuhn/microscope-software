@@ -56,6 +56,12 @@ if not (config.stack.slice_start == 0 and config.stack.slice_stop == 0) and conf
     output("# calibrate the speed")
     output(f"mic.rec_calibrate_stack_speed(n_below={config.stack.slice_start}, n_above={config.stack.slice_stop}, slice_thickness_um={config.stack.slice_thickness})")
 
+if config.general.wait_at_start > 0:
+    output("")
+    output("# wait before the measurement")
+    output(f"print('Waiting before the measurement for {config.general.wait_at_start} minutes')")
+    output(f"time.sleep({config.general.wait_at_start*60})")
+
 if config.grid.countx > 1 or config.grid.county > 1:
     output("")
     output(f"""

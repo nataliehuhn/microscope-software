@@ -4,6 +4,7 @@ binning = 1
 roi = 1024
 wait_before_image = 0
 continuous_sequence = False
+wait_at_start =  0
 
 [files]
 positions_filename = None

@@ -8,6 +8,7 @@ record_modes = [Mode_Current()] #type:mode, desc:"Specify the recoding modes wit
 #roi = 1024 #max:1024, min:8, unit:"pixel height"
 wait_before_image = 0.0 #min:0, unit:"s", desc:"When a position is reached the recording waits the specified amount of seconds."
 #continuous_sequence = False # desc:"If True, the camera records continously during the whole measurement time and only the necessary images are saved. If False the camera only makes an image when the image hast to be saved."
+wait_at_start =  0 # min:0, unit:"min", desc:"How long to wait before the measurement should start"
 
 [files]
 @desc=Specify the positions file and the folder to save to.
