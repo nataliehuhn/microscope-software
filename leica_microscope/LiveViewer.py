@@ -159,7 +159,7 @@ class QInputNumber(QInput):
             # slider
             self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
             self.layout().addWidget(self.slider)
-            self.slider.setRange(min * self.decimal_factor, max * self.decimal_factor)
+            self.slider.setRange(int(min * self.decimal_factor), int(max * self.decimal_factor))
             self.slider.valueChanged.connect(lambda x: self._valueChangedEvent(x / self.decimal_factor))
             self.slider.sliderPressed.connect(lambda: self._setSliderDragged(True))
             self.slider.sliderReleased.connect(lambda: self._setSliderDragged(False))
@@ -206,9 +206,15 @@ class QInputNumber(QInput):
             self._emitSignal()
 
     def _doSetValue(self, value):
-        self.spin_box.setValue(value)
+        if self.decimals == 0:
+            self.spin_box.setValue(int(value))
+        else:
+            self.spin_box.setValue(value)
         if self.slider is not None:
-            self.slider.setValue(value * self.decimal_factor)
+            if self.decimals == 0:
+                self.slider.setValue(int(value * self.decimal_factor))
+            else:
+                self.slider.setValue(value * self.decimal_factor)
 
     def value(self):
         return self.spin_box.value()
@@ -468,8 +474,8 @@ class ModulePosition(QtWidgets.QGroupBox):
             spinBox.setPrefix(labels[i]+" ")
 
             if i == 2:
-                slider.setMaximum(self.max_values[i]*self.z_conversion)
-            spinBox.setMaximum(self.max_values[i]*self.z_conversion)
+                slider.setMaximum(int(self.max_values[i]*self.z_conversion))
+            spinBox.setMaximum(int(self.max_values[i]*self.z_conversion))
 
             if i == 2:
                 self.sliders.append(slider)
