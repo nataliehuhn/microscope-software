@@ -211,10 +211,7 @@ class QInputNumber(QInput):
         else:
             self.spin_box.setValue(value)
         if self.slider is not None:
-            if self.decimals == 0:
-                self.slider.setValue(int(value * self.decimal_factor))
-            else:
-                self.slider.setValue(value * self.decimal_factor)
+            self.slider.setValue(int(value * self.decimal_factor))
 
     def value(self):
         return self.spin_box.value()
