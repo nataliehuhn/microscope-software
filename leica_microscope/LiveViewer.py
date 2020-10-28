@@ -422,6 +422,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.setMaximumWidth(300)
         self.parent = parent
         self.mic = parent.mic
+        self.cam = parent.cam
         layout.addWidget(self)
         self.setTitle("Position")
 
@@ -432,9 +433,17 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.combo_box.currentIndexChanged.connect(self.selectPlateData)
         self.layout_main.addWidget(self.combo_box)
 
-        self.button_add_centers = QtWidgets.QPushButton("add center positions")
-        self.button_add_centers.clicked.connect(self.addCenters)
-        self.layout_main.addWidget(self.button_add_centers)
+        self.layout_add_pos = QtWidgets.QHBoxLayout()
+        self.layout_main.addLayout(self.layout_add_pos)
+
+        if 0:
+            self.button_add_centers = QtWidgets.QPushButton("add center positions")
+            self.button_add_centers.clicked.connect(self.addCenters)
+            self.layout_add_pos.addWidget(self.button_add_centers)
+
+        self.button_addmore = QtWidgets.QPushButton("add well positions")
+        self.button_addmore.clicked.connect(self.addMorePositions)
+        self.layout_add_pos.addWidget(self.button_addmore)
 
         self.layout = QtWidgets.QHBoxLayout()
         self.layout_main.addLayout(self.layout)
@@ -628,6 +637,80 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.positions = []
         for x, y, r in self.plate_data["wells"]:
             self.positions.append([int(x), int(y), z])
+        self.updateList()
+
+    def addMorePositions(self):
+        count = 1
+        overlap = 0.1
+        class SelectNumberOfPositions(QtWidgets.QDialog):
+            def __init__(self):
+                QtWidgets.QDialog.__init__(self)
+
+                # Widget
+                self.setWindowTitle("Select Number of Frames")
+                self.setWindowIcon(qta.icon("fa.play"))
+                self.setModal(True)
+                main_layout = QtWidgets.QVBoxLayout(self)
+
+                self.label = QtWidgets.QLabel("How many positions per well?")
+                main_layout.addWidget(self.label)
+
+                self.spinBox = QtWidgets.QSpinBox()
+                self.spinBox.setRange(1, 10)
+                main_layout.addWidget(self.spinBox)
+
+                self.label2 = QtWidgets.QLabel("How should the overlap? (negative means gap)")
+                main_layout.addWidget(self.label2)
+
+                self.spinBox2 = QtWidgets.QDoubleSpinBox()
+                self.spinBox2.setRange(-10, 10)
+                self.spinBox2.setValue(-0.1)
+                self.spinBox2.setSingleStep(0.1)
+                main_layout.addWidget(self.spinBox2)
+
+                # set LineEdit text to selected
+                self.spinBox.findChild(QtWidgets.QLineEdit).selectAll()
+
+                button2 = QtWidgets.QPushButton("Ok")
+
+                def done():
+                    nonlocal count, overlap
+                    count = self.spinBox.value()
+                    overlap = self.spinBox2.value()
+                    self.done(1)
+
+                button2.clicked.connect(done)
+                main_layout.addWidget(button2)
+
+        if not SelectNumberOfPositions().exec_():
+            return
+
+        print("count", count, overlap)
+
+        dx = int(self.cam.getWidth() * (
+                    1 - overlap) * self.cam.getPixelSize() / self.mic.getEffectiveMagnification() / self.mic.getXResolution())
+        dy = int(self.cam.getHeight() * (
+                    1 - overlap) * self.cam.getPixelSize() / self.mic.getEffectiveMagnification() / self.mic.getYResolution())
+
+        well_positions = [
+            [], # 0 pos
+            [[0,0]], # 1 pos
+            [[0,-0.5],[0,0.5]], # 2 pos
+            [[0,-1],[0,0],[0,1]], # 3 pos
+            [[-0.5,-0.5],[-0.5,0.5],[0.5,-0.5],[0.5,0.5]], # 4 pos
+            [[0, -1], [-1,0], [0, 0], [1, 0], [0, 1]],     # 5 pos
+            [[-0.5,-1],[0.5,-1],[-0.5,0],[0.5,0], [-0.5,1],[0.5,1]], # 6 pos
+            [[-0.5,-1],[0.5,-1],[-1,0],[0,0],[1,0], [-0.5,1],[0.5,1]], # 7 pos
+            [[-0.5,-1],[0.5,-1],[-1.5,0],[-0.5,0],[0.5,0],[1.5,0], [-0.5,1],[0.5,1]], # 8 pos
+            [[-1,-1],[0,-1],[1,-1],[-1,0],[0,0],[1,0], [-1,1],[0,1],[1,1]], # 9 pos
+            [[-1,-1],[0,-1],[1,-1], [-1.5,0],[-0.5,0],[0.5,0],[1.5,0], [-1,1],[0,1],[1,1]], # 10 pos
+        ]
+
+        z = self.mic.getZPos()
+        self.positions = []
+        for x, y, r in self.plate_data["wells"]:
+            for offsetx, offsety in well_positions[count]:
+                self.positions.append([int(x)+offsetx*dx, int(y)+offsety*dy, z])
         self.updateList()
 
     def addPosition(self):
