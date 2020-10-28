@@ -545,6 +545,10 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.button_goto.clicked.connect(self.gotoPosition)
         button_layout.addWidget(self.button_goto)
 
+        self.button_clearall = QtWidgets.QPushButton("clear all")
+        self.button_clearall.clicked.connect(self.deleteAllPosition)
+        button_layout.addWidget(self.button_clearall)
+
         button_layout = QtWidgets.QHBoxLayout()
         self.layout_main.addLayout(button_layout)
         self.button_save = QtWidgets.QPushButton("Save Pos File")
@@ -604,7 +608,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.plot_line3, = self.plot.figure.gca().plot([0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 'k-', ms=5)
 
         self.ax.set_xlim(plate_data["extent"][0] - w * 0.01, plate_data["extent"][1] + w * 0.01)
-        self.ax.set_ylim(plate_data["extent"][2] - h * 0.01, plate_data["extent"][3] + h * 0.01)
+        self.ax.set_ylim(plate_data["extent"][3] + h * 0.01, plate_data["extent"][2] - h * 0.01)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
 
@@ -646,6 +650,10 @@ class ModulePosition(QtWidgets.QGroupBox):
             if index == self.list.count() - 1 and index != 0:
                 index -= 1
             self.list.setCurrentRow(index)
+
+    def deleteAllPosition(self):
+        self.positions = []
+        self.updateList()
 
     def gotoPosition(self):
         selections = self.list.selectedItems()
