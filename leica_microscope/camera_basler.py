@@ -98,13 +98,14 @@ class Camera(CameraBase):
                     grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
 
                     if grabResult.GrabSucceeded():
+                        TimeStampCam = grabResult.GetTimeStamp()
                         im = grabResult.Array
                         if self.config["flip_y"]:
                             im = im[::-1]
                         if self.config["flip_x"]:
                             im = im[:, ::-1]
                         #print(time.time(), im.min(), im.max())
-                        callback(im)
+                        callback(im, TimeStampCam)
                 except:
                     break
         self.stream_thread = Thread(target=streaming)
@@ -142,7 +143,7 @@ class Camera(CameraBase):
             self.camera.OffsetY = y
 
     def exposure(self) -> float:
-        return self.camera.ExposureTime()
+        return self.camera.ExposureTime() / 1000
 
     def setExposure(self, exposure: float):
         # exposure is in ms but the camera wants microseconds
