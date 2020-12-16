@@ -1321,6 +1321,8 @@ class Window(QtWidgets.QWidget):
     signal_coupler_changed = QtCore.Signal(float)
     signal_callback = QtCore.Signal(tuple)
 
+    signal_image_arrived = QtCore.Signal(object)
+
     def zoomEvent(self, scale, pos):
         self.signal_zoom.emit(scale, pos)
 
@@ -1405,76 +1407,8 @@ class Window(QtWidgets.QWidget):
         self.module_scalebar = ModuleScaleBar(self)
 
         self.pixmap = QtWidgets.QGraphicsPixmapItem(QtGui.QPixmap(1344,1024),self.origin)
-
-        if 0:
-            self.button_save.clicked.connect(self.ButtonSave)
-            self.button_load.clicked.connect(self.ButtonLoad)
-            self.button_addPos.clicked.connect(lambda: self.save_position(-1))
-            self.button_delPos.clicked.connect(lambda: self.del_position(self.current_position))
-            self.button_changePos.clicked.connect(lambda: self.save_position(self.current_position))
-            self.button_leftPos.clicked.connect(lambda: self.UpdateLabel(1, -1))
-            self.button_rightPos.clicked.connect(lambda: self.UpdateLabel(1, +1))
-
-            self.button_snap.clicked.connect(self.ButtonSnap)
-            self.button_continuous.clicked.connect(self.ButtonContinuous)
-            self.button_save_image.clicked.connect(self.ButtonSaveImage)
-            self.button_save_grid.clicked.connect(self.ButtonGrid)
-            self.button_save_stack.clicked.connect(self.ButtonStack)
-            self.button_save_video.clicked.connect(self.ButtonVideo)
-            self.button_save_stop.clicked.connect(self.ButtonStop)
-
-            self.spinBox_exposureTime.valueChanged.connect(self.ValueChanged)
-            self.spinBox_gain.valueChanged.connect(self.ValueChanged2)
-            self.button_camera_options.clicked.connect(self.OpenCameraMenu)
-
-            self.positions = []
-            self.current_position = -1
-            self.Label_Path.setText("No Positions")
-
-            self.pan = False
-            self.pan_offsetX = 0
-            self.pan_offsetY = 0
-            #self.event_filter = GraphicsItemEventFilter(self.origin, self)
-            #self.pixmap.installSceneEventFilter(self.event_filter)
-
-            self.blocked = False
-
-            #self.HelpText = HelpText(self.view.hud, __file__)
-
-            #self.help_text = QtWidgets.QGraphicsSimpleTextItem(self.view.hud)
-            #self.help_text.setFont(QtGui.QFont("", 11))
-            #self.help_text.setPos(0, 10)
-            #self.help_text.setBrush(QtGui.QBrush(QtGui.QColor(255, 255, 255)))
-
-            if 0:#os.path.exists(exposure_times_file):
-                exposure_time = np.loadtxt(exposure_times_file)
-            else:
-                exposure_time = [5]*180
-
-            if 0:#os.path.exists(gain_values_file):
-                gain_values = np.loadtxt(gain_values_file)
-            else:
-                gain_values = [0]*180
-
-            #self.spinBox_exposureTime.setValue(mmc.memmap.exposure)
-            #self.spinBox_gain.setValue(mmc.memmap.gain)
-
-            #self.ConnectToCamera()
-
-            #self.UpdateExposureTime()
-
-        if 0:
-            #self.cam.fast_recording.__enter__()
-            self.timer = QtCore.QTimer(self)
-            self.timer.timeout.connect(self.updateview)
-            self.timer.start(100)
-        self.cam.setStreamCallback(self.updateview)
-        
-        #self.last_mode = self.GetMode()
-        #mic.connectEvent(self.Event)
-        #mmc.event_connect = self.Event
-        #self.signal.connect(self.MicroscopeUpdate)
-        #self.Event(0, 0, "")
+        self.cam.setStreamCallback(lambda im: self.signal_image_arrived.emit(im))
+        self.signal_image_arrived.connect(self.updateview)
 
     def OpenCameraMenu(self):
         if self.window_settings is None:
@@ -1518,48 +1452,9 @@ class Window(QtWidgets.QWidget):
         if event.key() == QtCore.Qt.Key_E:
             # @key E: delete current point from list
             self.del_position(self.current_position)
-            
-        # @key ---- Microscope ----
-        """
-        if not self.blocked:
-            if event.key() == QtCore.Qt.Key_0:
-                # @key 0: change to brightfield
-                mic.setBFMode()
-                self.UpdateExposureTime()
-            if event.key() == QtCore.Qt.Key_9:
-                # @key 9: change to phase contrast
-                mic.setPHMode()
-                self.UpdateExposureTime()
-            if event.key() == QtCore.Qt.Key_8:
-                # @key 8: change to DIC
-                mic.setMode(3)
-                mic.sendCommand(82, 22, 2, wait=1)  # set the condenser disc to 2 "K10"
-                mic.sendCommand(85, 24, 1, wait=1)  # set the DIC turret to the next position
-                print("DIC turret in position ", mic.sendRequest(85, 23))
-                self.UpdateExposureTime()
-            if event.key() == QtCore.Qt.Key_Q:
-                mic.setMode(101)
-            if event.key() == QtCore.Qt.Key_W:
-                mic.setMode(102)
-            if QtCore.Qt.Key_1 <= event.key() <= QtCore.Qt.Key_6:
-                # @key 1-6: change to Fluorescence channel
-                mic.setFluoMode()
-                mic.setFluoChannel(event.key()-QtCore.Qt.Key_0)
-                self.UpdateExposureTime()
-            if event.key() == 223:
-                # @key ss: change to phase contrast
-                mic.setShutter(not mic.memmap.shutter)
-        """
-
 
     def showImage(self):
         if self.im.shape[0] != 0:
-            # show the histogram
-            #hist, bins = np.histogram(self.im, bins=np.arange(0, 2 ** mmc.config["BitDepth"] + 20, 10), normed=True)
-            #self.plot_line.set_data(bins[:-1], hist)
-            #self.plot.figure.gca().set_ylim(0, hist.max()*1.05)
-            #self.plot.draw()
-
             max_brightness = np.amax(self.im)
 
             max_value = (100*max_brightness/self.cam.getMaxValue()-5.1)/(40-5.1)*255
@@ -1570,45 +1465,29 @@ class Window(QtWidgets.QWidget):
             factor = max_value/max_brightness
             self.pixmap.setPixmap(QtGui.QPixmap(array2qimage(self.im*factor)))
 
-            #self.label_mode.setText("%.2f fps Illumination: %3.1f%% (%d, %dms, %d)" % (mmc.memmap.fps, 100*np.amax(self.im)/(2**mmc.config["BitDepth"]), np.amax(self.im), mmc.memmap.exposure, mmc.memmap.gain))
-
+    last_update_time = 0
     def updateview(self, im):
-
-
-        if im is None:
+        # update no more than 10 times per second
+        if time.time() - self.last_update_time < 0.1:
             return
-        self.im = im# >> 2
+
+        self.im = im
 
         # calculate maximum and histogram
-
         self.im_max = np.amax(self.im)
-        #print("range", np.amin(self.im), np.amax(self.im))
         self.im_hist, self.im_bins = np.histogram(self.im[::4, ::4], bins=np.arange(0, self.cam.getMaxValue() + 20, 10),
                                               density=True)
-        # display the iamge
-
-
+        # display the image
         self.showImage()
         self.view.setExtend(self.im.shape[1], self.im.shape[0])
 
+        self.last_update_time = time.time()
         self.signal_new_image.emit()
-        #self.CheckBlocked()
-        return
-        if self.pan_offsetX or self.pan_offsetY:
-            PixToMu = sensor_size/mic.getEffectiveMagnification()
-            StepToMu = mic.getResolutionX()
-            PixToStep = PixToMu/StepToMu
-            print(self.pan_offsetX*PixToStep, self.pan_offsetY*PixToStep)
-            mic.setXOffset(self.pan_offsetX*PixToStep)
-            mic.setYOffset(self.pan_offsetY*PixToStep)
-            self.pan_offsetX = 0
-            self.pan_offsetY = 0
         
     def closeEvent(self, event):
         self.cam.stop()
         if self.window_settings is not None:
             self.window_settings.close()
-        exit
 
 class Timeit:
     def __init__(self, name):
@@ -1619,6 +1498,7 @@ class Timeit:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         print("TIMEIT", self.name, time.time()-self.time)
+
 
 if __name__ == '__main__':
     if sys.platform[:3] == 'win':
