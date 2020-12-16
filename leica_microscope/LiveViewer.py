@@ -517,6 +517,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.ax = ax
 
         self.positions = []
+        self.position_names = []
         self.list = QtWidgets.QListWidget()
 
         self.plate_data = None
@@ -585,24 +586,26 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.plot.figure.axes[0].set_aspect('equal', 'box')
 
         self.ax.cla()
-        for well in plate_data["wells"]:
+        for well, well_name in zip(plate_data["wells"], plate_data["well_names"]):
             x, y, r = well
             circle1 = plt.Circle((x, y), r, color='lightgray', ec="gray")
             self.ax.add_artist(circle1)
             self.ax.plot(x, y, "+", color="gray", zorder=10)
+            self.ax.text(x-r, y+r, well_name, color="black", zorder=10, va="top")
 
         border = []
         w = plate_data["extent"][1] - plate_data["extent"][0]
         h = plate_data["extent"][3] - plate_data["extent"][2]
         corner_size = w * 0.08
-        if 0:
-            border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
-            border.append([plate_data["extent"][1], plate_data["extent"][2]])
-            border.append([plate_data["extent"][1], plate_data["extent"][3]])
-            border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][3]])
-            border.append([plate_data["extent"][0], plate_data["extent"][3] + corner_size])
-            border.append([plate_data["extent"][0], plate_data["extent"][2] - corner_size])
-            border.append([plate_data["extent"][0] + corner_size, plate_data["extent"][2]])
+        if 1:
+            border.append([plate_data["extent"][0], plate_data["extent"][2]])
+            border.append([plate_data["extent"][1] - corner_size, plate_data["extent"][2]])
+            border.append([plate_data["extent"][1], plate_data["extent"][2] + corner_size])
+            border.append([plate_data["extent"][1], plate_data["extent"][3] - corner_size])
+            border.append([plate_data["extent"][1] - corner_size, plate_data["extent"][3]])
+            border.append([plate_data["extent"][0], plate_data["extent"][3]])
+            border.append([plate_data["extent"][0], plate_data["extent"][2]])
+            self.ax.set_ylim(plate_data["extent"][2] - h * 0.01, plate_data["extent"][3] + h * 0.01)
         else:
             border.append([plate_data["extent"][0], plate_data["extent"][2]])
             border.append([plate_data["extent"][1] - corner_size, plate_data["extent"][2]])
@@ -611,6 +614,7 @@ class ModulePosition(QtWidgets.QGroupBox):
             border.append([plate_data["extent"][1] - corner_size, plate_data["extent"][3]])
             border.append([plate_data["extent"][0], plate_data["extent"][3]])
             border.append([plate_data["extent"][0], plate_data["extent"][2]])
+            self.ax.set_ylim(plate_data["extent"][3] + h * 0.01, plate_data["extent"][2] - h * 0.01)
         border = np.array(border)
 
         self.ax.plot(border[:, 0], border[:, 1], "-", color="gray")
@@ -620,7 +624,6 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.plot_line3, = self.plot.figure.gca().plot([0, 0, 0, 0, 0], [0, 0, 0, 0, 0], 'k-', ms=5)
 
         self.ax.set_xlim(plate_data["extent"][0] - w * 0.01, plate_data["extent"][1] + w * 0.01)
-        self.ax.set_ylim(plate_data["extent"][3] + h * 0.01, plate_data["extent"][2] - h * 0.01)
         self.ax.set_xticks([])
         self.ax.set_yticks([])
 
@@ -638,13 +641,16 @@ class ModulePosition(QtWidgets.QGroupBox):
     def addCenters(self):
         z = self.mic.getZPos()
         self.positions = []
+        self.position_names = []
         for x, y, r in self.plate_data["wells"]:
             self.positions.append([int(x), int(y), z])
+            self.position_names.append("")
         self.updateList()
 
     def addMorePositions(self):
         count = 1
         overlap = 0.1
+        well_names = ""
         class SelectNumberOfPositions(QtWidgets.QDialog):
             def __init__(self):
                 QtWidgets.QDialog.__init__(self)
@@ -671,15 +677,22 @@ class ModulePosition(QtWidgets.QGroupBox):
                 self.spinBox2.setSingleStep(0.1)
                 main_layout.addWidget(self.spinBox2)
 
+                self.label3 = QtWidgets.QLabel("Which wells? (comma separated list, leave empty for all)")
+                main_layout.addWidget(self.label3)
+
+                self.well_names = QtWidgets.QLineEdit()
+                main_layout.addWidget(self.well_names)
+
                 # set LineEdit text to selected
                 self.spinBox.findChild(QtWidgets.QLineEdit).selectAll()
 
                 button2 = QtWidgets.QPushButton("Ok")
 
                 def done():
-                    nonlocal count, overlap
+                    nonlocal count, overlap, well_names
                     count = self.spinBox.value()
                     overlap = self.spinBox2.value()
+                    well_names = self.well_names.text()
                     self.done(1)
 
                 button2.clicked.connect(done)
@@ -688,7 +701,9 @@ class ModulePosition(QtWidgets.QGroupBox):
         if not SelectNumberOfPositions().exec_():
             return
 
-        print("count", count, overlap)
+        well_names = [w.strip() for w in well_names.split(",") if w.strip() != ""]
+
+        print("count", count, overlap, well_names)
 
         dx = int(self.cam.getWidth() * (
                     1 - overlap) * self.cam.getPixelSize() / self.mic.getEffectiveMagnification() / self.mic.getXResolution())
@@ -711,9 +726,15 @@ class ModulePosition(QtWidgets.QGroupBox):
 
         z = self.mic.getZPos()
         self.positions = []
-        for x, y, r in self.plate_data["wells"]:
+        self.position_names = []
+        for (x, y, r), name in zip(self.plate_data["wells"], self.plate_data["well_names"]):
+            if len(well_names) != 0 and str(name) not in well_names:
+                continue
+            index = 1
             for offsetx, offsety in well_positions[count]:
                 self.positions.append([int(x)+offsetx*dx, int(y)+offsety*dy, z])
+                self.position_names.append(f"w{name}p{index}")
+                index += 1
         self.updateList()
 
     def addPosition(self):
@@ -721,10 +742,30 @@ class ModulePosition(QtWidgets.QGroupBox):
         selections = self.list.selectedItems()
         if len(selections) == 0 or self.list.currentRow() == self.list.count() - 1:
             self.positions.append(position)
+            self.position_names.append("")
+            new_index = len(self.positions)
+            added_index = new_index - 1
         else:
             self.positions[self.list.currentRow()] = position
+            self.position_names[self.list.currentRow()] = ""
+            new_index = self.list.currentRow()
+            added_index = new_index
+
+        pos_name = ""
+        for (x, y, r), name in zip(self.plate_data["wells"], self.plate_data["well_names"]):
+            if np.sqrt((position[0]-x)**2 + (position[1]-y)**2) < r:
+                index = 0
+                while True:
+                    index += 1
+                    pos_name = f"w{name}p{index}"
+                    for position_name in self.position_names:
+                        if position_name == pos_name:
+                            break
+                    else:
+                        break
+        self.position_names[added_index] = pos_name
         self.updateList()
-        self.list.setCurrentRow(len(self.positions))
+        self.list.setCurrentRow(new_index)
 
     def deletePosition(self):
         selections = self.list.selectedItems()
@@ -733,6 +774,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         else:
             index = self.list.currentRow()
             self.positions.pop(self.list.currentRow())
+            self.position_names.pop(self.list.currentRow())
             self.updateList()
             if index == self.list.count() - 1 and index != 0:
                 index -= 1
@@ -740,6 +782,7 @@ class ModulePosition(QtWidgets.QGroupBox):
 
     def deleteAllPosition(self):
         self.positions = []
+        self.position_names = []
         self.updateList()
 
     def gotoPosition(self):
@@ -760,7 +803,7 @@ class ModulePosition(QtWidgets.QGroupBox):
 
         self.list.clear()
         for index, position in enumerate(self.positions):
-            item = QtWidgets.QListWidgetItem(qta.icon("fa.crosshairs"), "%2d (x: %6d, y: %6d, z: %6d)" % (index, position[0], position[1], position[2]), self.list)
+            item = QtWidgets.QListWidgetItem(qta.icon("fa.crosshairs"), "%2d (x: %6d, y: %6d, z: %6d) %s" % (index, position[0], position[1], position[2], self.position_names[index]), self.list)
         item = QtWidgets.QListWidgetItem(qta.icon("fa.plus"), "free slot", self.list)
         self.plot_line2.set_data([p[0] for p in self.positions], [p[1] for p in self.positions])
         self.plot.draw()
@@ -787,7 +830,12 @@ class ModulePosition(QtWidgets.QGroupBox):
 
     def saveFile(self, filename):
         print("Saving:", filename)
-        np.savetxt(filename, self.positions, fmt="%d")
+        with open(filename, "w") as fp:
+            for (x, y, z), name in zip(self.positions, self.position_names):
+                if name != "":
+                    fp.write(f"{x} {y} {z} # {name}\n")
+                else:
+                    fp.write(f"{x} {y} {z}\n")
 
     def ButtonLoad(self):
         fileName = QtWidgets.QFileDialog.getOpenFileName(self, "Open Positions", "", "Position Files (*.txt)")
@@ -800,14 +848,20 @@ class ModulePosition(QtWidgets.QGroupBox):
 
     def loadFile(self, fileName):
         print("Loading:", fileName)
+        self.positions = []
+        self.position_names = []
         try:
-            positions = np.loadtxt(fileName)
+            with open(fileName, "r") as fp:
+                for line in fp:
+                    data = [v.strip() for v in line.split() if v.strip() != "#"]
+                    x = int(data[0])
+                    y = int(data[1])
+                    z = int(data[2])
+                    name = data[3] if len(data) >= 4 else ""
+                    self.positions.append([x, y, z])
+                    self.position_names.append(name)
         except IOError:
-            self.positions = []
             return
-        if len(positions.shape) == 1 and positions.shape[0] == 3:
-            positions = positions.reshape(1, 3)
-        self.positions = positions.tolist()
         self.updateList()
 
     def initSlider(self, value, i):
