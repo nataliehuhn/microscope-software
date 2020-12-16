@@ -93,6 +93,13 @@ class Microscope:
         if no_init is True:
             return
 
+        with self.nowait:
+            # set the range of the stage according to the config
+            self.send_command_and_wait(f"72026 {self.config['stage_min_x']}")
+            self.send_command_and_wait(f"72027 {self.config['stage_max_x']}")
+            self.send_command_and_wait(f"73026 {self.config['stage_min_y']}")
+            self.send_command_and_wait(f"73027 {self.config['stage_max_y']}")
+
         self.properties = self.getAllProperties()
         self.magnification, self.numerical_aperture, self.objective, self.mode, self.channel = \
                 self.send_command_and_wait([
@@ -199,6 +206,9 @@ class Microscope:
                         propertes["modes"].append(k)
                         break
 
+        x, y, z = propertes["pos"]
+        propertes["pos"] = [self.processXPos(x), self.processYPos(y), z]
+
         self.properties = propertes
         return propertes
 
@@ -233,13 +243,18 @@ class Microscope:
 
     def getPos(self) -> np.ndarray:
         """ Get the XYZ position in steps. """
-        return np.array(self.send_command_and_wait(["72023", "73023", "71023"], [int, int, int]))
+        x, y, z = self.send_command_and_wait(["72023", "73023", "71023"], [int, int, int])
+        x = self.processXPos(x)
+        y = self.processYPos(y)
+        return np.array([x, y, z])
 
     def setPos(self, pos):
         """ Set the XYZ position in steps. """
         for i in range(3):
             try:
                 x, y, z = pos
+                x = self.processXPos(x)
+                y = self.processYPos(y)
                 # wait until the microscope has truly reached the position
                 self.wait_for_stop(self.getMoving)
                 try:
@@ -267,6 +282,8 @@ class Microscope:
 
     def setXYPos(self, x, y):
         """ Set the XY position in steps. """
+        x = self.processXPos(x)
+        y = self.processYPos(y)
         try:
             self.send_command_and_wait(["72022 %d" % x, "73022 %d" % y])
         except FlowError as err:
@@ -294,10 +311,11 @@ class Microscope:
 
     def getXPos(self) -> int:
         """ Get the x position in steps. """
-        return self.send_command_and_wait("72023", int)
+        return self.processXPos(self.send_command_and_wait("72023", int))
 
     def setXPos(self, x: int):
         """ Set the x position in steps. """
+        x = self.processXPos(x)
         try:
             self.send_command_and_wait("72022 %d" % x)
         except FlowError:
@@ -316,10 +334,11 @@ class Microscope:
 
     def getYPos(self) -> int:
         """ Get the y position in steps. """
-        return self.send_command_and_wait("73023", int)
+        return self.processYPos(self.send_command_and_wait("73023", int))
 
     def setYPos(self, y: int):
         """ Set the y position in steps. """
+        y = self.processYPos(y)
         try:
             self.send_command_and_wait("73022 %d" % y)
         except FlowError:
@@ -369,6 +388,16 @@ class Microscope:
                     continue
             # we are done
             break
+
+    def processXPos(self, x):
+        if self.config["stage_flip_x"] is True:
+            x = self.config["stage_max_x"]-x
+        return x
+
+    def processYPos(self, y):
+        if self.config["stage_flip_y"] is True:
+            y = self.config["stage_max_y"]-y
+        return y
 
     """ speed adjustments """
 
@@ -663,20 +692,23 @@ class Microscope:
         else:
             buffer = self.recordFastStackToBuffer(z, z_start, z_stop, n_slices)
 
-        if not save_projection:
-            # save single images
-            for i in range(n_slices):
-                self.saveImage(format_with_default(filename, z=i), buffer[i])
-        else:
-            # save projection
-            dtype = np.uint8
-            if n_slices > 256:
-                dtype = np.uint16
-            self.saveImage(format_with_default(filename, z='MinProj'), np.min(buffer, axis=0))
-            self.saveImage(format_with_default(filename, z='MaxProj'), np.max(buffer, axis=0))
-            self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype))
-            self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype))
-        print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
+        if 1:
+            if not save_projection:
+                # save single images
+                for i in range(n_slices):
+                    self.saveImage(format_with_default(filename, z=i), buffer[i])
+            else:
+                # save projection
+                dtype = np.uint8
+                if n_slices > 256:
+                    dtype = np.uint16
+                #for i in range(n_slices):
+                #    self.saveImage(format_with_default(filename, z=i), buffer[i])
+                self.saveImage(format_with_default(filename, z='MinProj'), np.min(buffer, axis=0))
+                self.saveImage(format_with_default(filename, z='MaxProj'), np.max(buffer, axis=0))
+                self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype))
+                self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype))
+            print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
 
         # close the shutter after recording
         if self.isFluo():
@@ -788,15 +820,33 @@ class Microscope:
 
         # prepare the video buffer (a numpy array the size to hold all images)
         buffer = self.cam.getVideoBuffer(n_slices)
+
+        index = None
+        def streaming(im):
+            nonlocal index
+            if index is not None:
+                buffer[index] = im
+                index += 1
+            if index == buffer.shape[0]:
+                self.cam.stopStreaming()
+
+        #self.cam.startStreaming(streaming)
+
         # move to end (don't wait for command to finish) and record
         with self.nowait:
+            #print("move")
+            index = 0
             self.setZPos(z + z_stop)
+            #while index < buffer.shape[0]:
+            #    pass
+            #self.cam.stopStreaming()
             self.cam.getVideo(buffer)
 
         self.memmap_writer.store_image(buffer[n_slices//2])
 
         # reset speed and position
         self.setZSpeed(8820000)
+
         self.setZPos(z)
 
         return buffer
