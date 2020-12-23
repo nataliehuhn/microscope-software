@@ -117,7 +117,7 @@ class Camera(CameraBase):
 
 
     def getImage(self):
-        im = self.camera.GrabOne(1000).Array
+        im = self.camera.GrabOne(11000).Array
         if self.config["flip_y"]:
             im = im[::-1]
         return im
@@ -162,7 +162,7 @@ class Camera(CameraBase):
         return [0, 10000]
 
     def binning(self) -> int:
-        return 1
+        return 0
 
     def setBinning(self, binning: int):
         print("WARNING: binning is currently not supported")

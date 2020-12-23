@@ -998,10 +998,10 @@ class ModuleExposure(QtWidgets.QGroupBox):
         min_exp, max_exp = self.cam.get_exposure_range()
         self.input_exposure = QInputNumber(self.layout, "Exposure", self.cam.exposure(), min_exp, max_exp, use_slider=True)
         min_gain, max_gain = self.cam.get_gain_range()
-        self.input_gain = QInputNumber(self.layout, "Gain", self.cam.gain(), min_gain, max_gain, use_slider=True)
-
+        if self.cam.gain() is None:
+            self.input_gain = QInputNumber(self.layout, "Gain", self.cam.gain(), min_gain, max_gain, use_slider=True)
+            self.input_gain.valueChanged.connect(lambda v: self.valueChanged(v, 1))
         self.input_exposure.valueChanged.connect(lambda v: self.valueChanged(v, 0))
-        self.input_gain.valueChanged.connect(lambda v: self.valueChanged(v, 1))
 
         self.parent.signal.connect(self.updateStatus)
         self.updateStatus()
@@ -1032,10 +1032,11 @@ class ModuleROI(QtWidgets.QGroupBox):
         self.setLayout(self.layout)
 
         self.input_crop = QInputNumber(self.layout, "ROI Height", self.cam.getHeight(), 8, 2192, use_slider=True, float=False)
-        self.input_binning = QInputNumber(self.layout, "Binning", self.cam.gain(), 1, 8, use_slider=True, float=False)
-
+        print("nan", self.cam.gain())
+        if self.cam.binning():
+            self.input_binning = QInputNumber(self.layout, "Binning", self.cam.binning(), 1, 8, use_slider=True, float=False)
+            self.input_binning.valueChanged.connect(lambda v: self.valueChanged(v, 1))
         self.input_crop.valueChanged.connect(lambda v: self.valueChanged(v, 0))
-        self.input_binning.valueChanged.connect(lambda v: self.valueChanged(v, 1))
 
         self.parent.signal.connect(self.updateStatus)
         self.updateStatus()
@@ -1056,11 +1057,12 @@ class ModuleROI(QtWidgets.QGroupBox):
             self.input_binning.setValue(value)
             self.cam.setBinning(value)
             self.last_binning = value
-        print("Set ROI height to", value)
-        crop = 2192 - value
-        crop = crop - crop % (8*self.cam.binning())
-        self.input_crop.setValue(2192 - crop)
-        self.cam.setROI(0, crop // 2, 2752, 2192 - crop)
+        else:
+            print("Set ROI height to", value)
+            crop = 2192 - value
+            crop = crop - crop % (8*(self.cam.binning() if self.cam.binning() else 1))
+            self.input_crop.setValue(2192 - crop)
+            self.cam.setROI(0, crop // 2, 2752, 2192 - crop)
         self.updateStatus()
 
     def updateStatus(self):
