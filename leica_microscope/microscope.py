@@ -267,7 +267,6 @@ class Microscope:
                 self.wait_for_stop(self.getMoving)
                 # get the new position
                 new_pos = self.getPos()
-                print("pos", pos, "new_pos", new_pos)
                 # check if the new position is the target position
                 if np.all(pos != new_pos):
                     print("not equal")

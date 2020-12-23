@@ -70,7 +70,7 @@ if config.grid.countx > 1 or config.grid.county > 1:
     startx, starty = {config.grid.startx}, {config.grid.starty}
     countx, county = {config.grid.countx}, {config.grid.county}
     dx = int(mic.cam.getWidth()*(1-overlap)*mic.cam.getPixelSize()/mic.getEffectiveMagnification()/mic.getXResolution())
-    dy = int(mic.cam.getHeight()*(1-overlap)*mic.cam.getPixelSize()/mic.getEffectiveMagnification()/mic.getYResolution())
+    dy = -int(mic.cam.getHeight()*(1-overlap)*mic.cam.getPixelSize()/mic.getEffectiveMagnification()/mic.getYResolution())
     """)
 
 properties = {}
