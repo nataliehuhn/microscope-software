@@ -311,7 +311,6 @@ class ModuleMethods(QtWidgets.QGroupBox):
 
     def updateStatus(self):
         self.index = self.mic.properties["current_mode"]
-        print("self.index", self.index, self.mic.mode_id_to_name(self.index))
         self.setTitle("Methods %s" % self.mic.mode_id_to_name(self.index))
         self.updateButtons()
 
@@ -320,7 +319,6 @@ class ModuleMethods(QtWidgets.QGroupBox):
             button.setChecked(False)
         if self.mic.mode_id_to_name(self.index):
             self.buttons_by_mode[self.mic.mode_id_to_name(self.index)].setChecked(True)
-
 
 
 class ModuleIntensity(QtWidgets.QGroupBox):
@@ -360,6 +358,7 @@ class ModuleIntensity(QtWidgets.QGroupBox):
         self.input_aperture.setValue(self.mic.properties["aperture"])
         self.input_field.setValue(self.mic.properties["field"])
         self.input_intensity.setValue(self.mic.properties["intensity"])
+
 
 class ModuleFilters(QtWidgets.QGroupBox):
 
@@ -433,16 +432,10 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.setLayout(self.layout_main)
 
         self.combo_box = QtWidgets.QComboBox()
-        self.combo_box.currentIndexChanged.connect(self.selectPlateData)
         self.layout_main.addWidget(self.combo_box)
 
         self.layout_add_pos = QtWidgets.QHBoxLayout()
         self.layout_main.addLayout(self.layout_add_pos)
-
-        if 0:
-            self.button_add_centers = QtWidgets.QPushButton("add center positions")
-            self.button_add_centers.clicked.connect(self.addCenters)
-            self.layout_add_pos.addWidget(self.button_add_centers)
 
         self.button_addmore = QtWidgets.QPushButton("add well positions")
         self.button_addmore.clicked.connect(self.addMorePositions)
@@ -508,9 +501,6 @@ class ModulePosition(QtWidgets.QGroupBox):
         ax.set_ylim(600750, 0)
 
         def onclick(event):
-            print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
-                  ('double' if event.dblclick else 'single', event.button,
-                   event.x, event.y, event.xdata, event.ydata))
             self.mic.setXYPos(int(event.xdata), int(event.ydata))
 
         cid = self.plot.figure.canvas.mpl_connect('button_press_event', onclick)
@@ -572,9 +562,10 @@ class ModulePosition(QtWidgets.QGroupBox):
         button_layout.addWidget(self.button_load)
 
         self.loadFile(positions_file)
+        self.combo_box.currentIndexChanged.connect(self.selectPlateData)
+        self.selectPlateData()
 
         self.parent.signal.connect(self.updateStatus)
-        self.updateList()
 
     def selectPlateData(self):
         index = self.combo_box.currentIndex()
@@ -702,8 +693,6 @@ class ModulePosition(QtWidgets.QGroupBox):
             return
 
         well_names = [w.strip() for w in well_names.split(",") if w.strip() != ""]
-
-        print("count", count, overlap, well_names)
 
         dx = int(self.cam.getWidth() * (
                     1 - overlap) * self.cam.getPixelSize() / self.mic.getEffectiveMagnification() / self.mic.getXResolution())
@@ -887,13 +876,10 @@ class ModulePosition(QtWidgets.QGroupBox):
             return
         #SetValueNoSignal(self.spinBoxes[i], value)
         if i == 0:
-            print("Set X to", value)
             self.mic.setX(int(value / self.conversion[i]))
         if i == 1:
-            print("Set Y to", value)
             self.mic.setY(int(value / self.conversion[i]))
         if i == 2:
-            print("Set Z to", value, int(value/self.conversion[i]))
             self.mic.setZ(int(value/self.conversion[i]))
             #SetValueNoSignal(self.sliders[0], value)
 
@@ -1032,10 +1018,11 @@ class ModuleROI(QtWidgets.QGroupBox):
         self.setLayout(self.layout)
 
         self.input_crop = QInputNumber(self.layout, "ROI Height", self.cam.getHeight(), 8, 2192, use_slider=True, float=False)
-        print("nan", self.cam.gain())
+
         if self.cam.binning():
             self.input_binning = QInputNumber(self.layout, "Binning", self.cam.binning(), 1, 8, use_slider=True, float=False)
             self.input_binning.valueChanged.connect(lambda v: self.valueChanged(v, 1))
+
         self.input_crop.valueChanged.connect(lambda v: self.valueChanged(v, 0))
 
         self.parent.signal.connect(self.updateStatus)
@@ -1109,90 +1096,6 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         self.plot.draw()
 
 
-class ModuleSnap(QtWidgets.QGroupBox):
-    last_folder = ""
-
-    def __init__(self, parent, layout):
-        QtWidgets.QWidget.__init__(self)
-        self.parent = parent
-        layout.addWidget(self)
-        self.setTitle("Record")
-        self.layout = QtWidgets.QVBoxLayout()
-        self.setLayout(self.layout)
-        self.setMinimumWidth(200)
-
-        self.layout1 = QtWidgets.QHBoxLayout()
-        self.layout.addLayout(self.layout1)
-
-        self.layout2 = QtWidgets.QHBoxLayout()
-        self.layout.addLayout(self.layout2)
-
-        self.button_snap = QtWidgets.QPushButton("Snap Image")
-        self.layout1.addWidget(self.button_snap)
-
-        self.button_continuous = QtWidgets.QPushButton("Sequence")
-        self.layout1.addWidget(self.button_continuous)
-
-        self.button_save_image = QtWidgets.QPushButton("Save Image")
-        self.layout2.addWidget(self.button_save_image)
-
-        self.button_snap.clicked.connect(self.ButtonSnap)
-        self.button_continuous.clicked.connect(self.ButtonContinuous)
-        self.button_save_image.clicked.connect(self.ButtonSaveImage)
-
-        self.updateButtonContinuosText()
-
-        self.parent.signal_new_image.connect(self.updateStatus)
-
-    def updateStatus(self):
-        if mmc.isSequenceRunning():
-            self.setTitle("Record %.2f fps" % mmc.memmap.fps)
-        else:
-            self.setTitle("Record %.2f fps" % 0.0)
-
-    def ButtonSnap(self):
-        self.parent.im = None
-        shutter_opened = False
-        if mic:
-            print(mic.memmap.mode, mic.memmap.shutter)
-            if (mic.memmap.mode == 10 or mic.memmap.mode > 100) and not mic.memmap.shutter:
-                shutter_opened = True
-                mic.setShutter(True)
-                mic.waitTillEvent(shutter=True)
-        mmc.snapImage()
-        if shutter_opened:
-            mic.setShutter(False)
-        self.parent.im = mmc.getImage().copy()
-        self.parent.showImage()
-        self.updateButtonContinuosText()
-
-    def updateButtonContinuosText(self):
-        if mmc.isSequenceRunning():
-            self.button_continuous.setText("Stop Sequence")
-        else:
-            self.button_continuous.setText("Start Sequence")
-
-    def ButtonContinuous(self):
-        if mmc.isSequenceRunning():
-            mmc.stopSequenceAcquisition()
-        else:
-            mmc.startContinuousSequenceAcquisition(1)
-        self.updateButtonContinuosText()
-
-    def ButtonSaveImage(self):
-        save_filename = r"{datetime}.tif".format(datetime=time.strftime("%Y%m%d-%H%M%S", time.localtime()))
-
-        filename = os.path.join(self.last_folder, save_filename)
-        filename = QtWidgets.QFileDialog.getSaveFileName(self, "Save Image", filename, "TIF images (*.tif)")
-        if isinstance(filename, tuple):
-            filename = str(filename[0])
-        else:
-            filename = str(filename)
-        if filename:
-            self.last_folder = os.path.dirname(filename)
-            mmc.saveImage(filename, self.parent.im, microscope=mic)
-            print(filename, "saved")
-
 class ModuleSaveImage(QtWidgets.QGroupBox):
     last_folder = ""
 
@@ -1235,6 +1138,7 @@ class ModuleSaveImage(QtWidgets.QGroupBox):
             self.mic.saveImage(filename, self.parent.im)
             print(filename, "saved")
 
+
 class ModuleScaleBar(QtWidgets.QGroupBox):
 
     def __init__(self, parent):
@@ -1260,7 +1164,6 @@ class ModuleScaleBar(QtWidgets.QGroupBox):
         self.scalebar_text.setFont(self.font)
         self.scalebar_text.setDefaultTextColor(QtGui.QColor("white"))
 
-        print("slef.parent", self.parent.signal_zoom)
         self.parent.signal_zoom.connect(self.zoomEvent)
         self.parent.signal_objective_changed.connect(self.updateStatus)
         self.parent.signal_coupler_changed.connect(self.updateStatus)
@@ -1277,7 +1180,7 @@ class ModuleScaleBar(QtWidgets.QGroupBox):
             self.coupler = self.mic.getCoupler()
         except IOError:
             self.coupler = 1
-        print("updateStatus", self.magnification, self.coupler)
+
         self.updateBar()
 
     def zoomEvent(self, scale, pos):
@@ -1342,7 +1245,6 @@ class Window(QtWidgets.QWidget):
         if event.type() == QtCore.QEvent.GraphicsSceneMouseMove:
             if self.pan:
                 pos = event.pos()  # self.view.mapFromView(event.pos())
-                print(pos.x(), pos.y())
                 dx = (self.last_x - pos.x())
                 dy = (self.last_y - pos.y())
                 # print(dx,-dy)
@@ -1361,7 +1263,7 @@ class Window(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        print("Conneting to microscope...")
+        print("Connecting to microscope...")
         try:
             self.mic = Microscope(no_camera=True)
         except NoMicroscopeFound as err:
@@ -1490,6 +1392,7 @@ class Window(QtWidgets.QWidget):
         self.cam.stop()
         if self.window_settings is not None:
             self.window_settings.close()
+
 
 class Timeit:
     def __init__(self, name):
