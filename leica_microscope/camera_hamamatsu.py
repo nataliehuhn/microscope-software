@@ -29,6 +29,8 @@ class Camera(CameraBase):
         self.camera.setPropertyValue("readout_speed", 1)
         self.camera.setPropertyValue("defect_correct_mode", 1)
 
+        self.resetROI()
+
         self.fast_recording = Fast(self, self.camera)
 
         self.callbackid = None
@@ -150,6 +152,14 @@ class Camera(CameraBase):
         self.camera.setPropertyValue("subarray_hsize", hsize)
         self.camera.setSubArrayMode()
 
+    def resetROI(self):
+        self.camera.setPropertyValue("subarray_vpos", 0)
+        self.camera.setPropertyValue("subarray_hpos", 0)
+        self.camera.setPropertyValue("subarray_vsize", self.camera.max_height)
+        self.camera.setPropertyValue("subarray_hsize", self.camera.max_width)
+        self.camera.setSubArrayMode()
+        print(0, 0, self.camera.max_height, self.camera.max_width)
+
     def exposure(self) -> float:
         return self.camera.getPropertyValue('exposure_time')[0]*1e3
 
@@ -157,7 +167,8 @@ class Camera(CameraBase):
         self.camera.setPropertyValue("exposure_time", exposure*1e-3)
 
     def get_exposure_range(self):
-        return self.camera.getPropertyRange("exposure_time")
+        min, max = self.camera.getPropertyRange("exposure_time")
+        return [min*1e3, max*1e3]
 
     def gain(self) -> float:
         return self.camera.getPropertyValue('contrast_gain')[0]
