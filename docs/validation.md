@@ -19,3 +19,8 @@ Moved experiment runners match their original source after line-ending
 normalization. Current documentation's relative links resolve locally.
 The launchers were inspected but not run, because opening them starts hardware
 software. No new physical camera, stage or plate-alignment validation was performed.
+
+Desktop update: **80 tests passed** in the local validation environment.
+This includes the restored auto-contrast display, black frames, raw-image
+preservation, fluorescence gain/exposure and configured-limit regressions.
+Physical operation on Mic2 was not tested by this local suite.

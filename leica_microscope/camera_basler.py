@@ -149,6 +149,7 @@ class Camera(CameraBase):
             "offset_uncertainty_s": delay / 2.0,
         }
 
+
     def getMaximumFramerateAtShortExposure(self):
         """Measure the configured full-resolution readout limit, then restore exposure."""
         if self.camera.IsGrabbing():
@@ -159,6 +160,7 @@ class Camera(CameraBase):
             return float(self.getFramerate())
         finally:
             self.camera.ExposureTime = original_exposure_us
+
 
     def streamFramesWithTimestamps(
             self, on_frame, stop_event, started_event=None,
@@ -207,6 +209,7 @@ class Camera(CameraBase):
         finally:
             self.camera.StopGrabbing()
         return count
+
 
     do_streaming = False
     def startStreaming(self, callback):
@@ -277,13 +280,22 @@ class Camera(CameraBase):
         return [0, 10000]
 
     def gain(self) -> float:
-        return None
+        return float(self.camera.Gain.Value)
 
     def setGain(self, gain: float):
-        print(f"WARNING: gain is automatically adjusted to {gain}")
+        gain = float(gain)
+        minimum, maximum = self.get_gain_range()
+        if not np.isfinite(gain) or not minimum <= gain <= maximum:
+            raise ValueError(
+                "Basler gain must be between {:g} and {:g} dB; got {!r}".format(
+                    minimum, maximum, gain
+                )
+            )
+        self.camera.GainAuto.Value = "Off"
+        self.camera.Gain.Value = gain
 
     def get_gain_range(self):
-        return [0, 10000]
+        return [float(self.camera.Gain.Min), float(self.camera.Gain.Max)]
 
     def binning(self) -> int:
         return 0

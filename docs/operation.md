@@ -22,9 +22,9 @@ The Record GUI supports opt-in timed continuous projection. The imported
 over requested Z offsets and duration using the Basler camera. Camera exposure,
 stage speed and starting Z are restored by the acquisition code.
 
-`Record.bat` now launches this checkout with the separate
-`Config_Experimental_Copy.txt` settings. The older
-`Record_Experimental_Copy.bat` name remains as a compatibility wrapper.
+`Record.bat` uses the existing `Config.txt` settings, preserving the regular
+desktop workflow. `Record_Experimental_Copy.bat` still uses the separate
+`Config_Experimental_Copy.txt` settings when explicitly chosen.
 
 Specialist timed-projection workflows live in `tools/experiments/`, including
 `timed_projection_experiment.py`, `timed_projection_600um_experiment.py`,
@@ -49,3 +49,19 @@ failure, retain the generated script and error output with the experiment data.
 [Original detailed notes](history/README-before-organization.md) preserve the
 pre-migration operating and calibration descriptions. Paths in those notes
 describe the original installations and may predate this folder organization.
+
+## Legacy features retained in the desktop version
+
+The histogram's **Auto-contrast (fluorescence)** checkbox is available alongside
+per-channel exposure memory and gain controls. Auto-contrast affects the display
+only, leaving raw images unchanged. Black frames remain black without division
+by zero. Ordinary single images, Z-stacks, the previous projection mode, grids,
+positions and repetitions remain available. Optimized fast scanning is opt-in.
+
+`SetLimits.bat` applies this branch's configured XY limits. Console, configuration
+editing and the existing reset utility are also retained. Reset remains a
+maintenance operation, with the original process-reset behaviour.
+
+The fluorescence group protocol (`MigAssay_FluoGroups.py`), Basler gain control,
+per-channel exposure memory and streamer startup fixes from the fluorescence
+installation are included. Mic2 retains its own Z model and stage coordinates.

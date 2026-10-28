@@ -4,6 +4,10 @@ import sys
 from pathlib import Path
 import json
 
+# Direct launches must use this checkout, even if another copy is installed.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 """ some magic to prevent PyQt5 from swallowing exceptions """
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -306,8 +310,7 @@ class ModuleMethods(QtWidgets.QGroupBox):
         self.setTitle(f"Methods {self.mic.mode_id_to_name(self.index)} -> {method}")
         app.processEvents()
         self.updateButtons()
-        self.mic.setMode(method)
-        self.parent.update()
+        self.parent.setMode(method)
 
     def updateStatus(self):
         self.index = self.mic.properties["current_mode"]
@@ -400,8 +403,7 @@ class ModuleFilters(QtWidgets.QGroupBox):
         self.setTitle(f'Filters {self.mic.properties["filters"][self.mic.properties["current_filter"]-1]} -> {self.mic.properties["filters"][i]}')
         app.processEvents()
         self.updateButtons()
-        self.mic.setMode(self.mic.properties["current_mode"], i + 1)
-        self.parent.update()
+        self.parent.setMode(self.mic.properties["current_mode"], i + 1)
 
     def updateStatus(self):
         self.setTitle("Filters %s" % self.mic.properties["filters"][self.mic.properties["current_filter"]-1])
@@ -982,14 +984,22 @@ class ModuleExposure(QtWidgets.QGroupBox):
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
         min_exp, max_exp = self.cam.get_exposure_range()
-        self.input_exposure = QInputNumber(self.layout, "Exposure", self.cam.exposure(), min_exp, max_exp, use_slider=True)
-        min_gain, max_gain = self.cam.get_gain_range()
-        if self.cam.gain() is None:
-            self.input_gain = QInputNumber(self.layout, "Gain", self.cam.gain(), min_gain, max_gain, use_slider=True)
+        self.input_exposure = QInputNumber(
+            self.layout, "Exposure", self.cam.exposure(), min_exp, max_exp,
+            use_slider=True, unit="ms",
+            tooltip="Remembered separately for each method and fluorescence filter during this viewer session.",
+        )
+        self.input_gain = None
+        gain = self.cam.gain()
+        if gain is not None and np.isfinite(gain):
+            min_gain, max_gain = self.cam.get_gain_range()
+            self.input_gain = QInputNumber(self.layout, "Gain", gain, min_gain, max_gain, use_slider=True)
             self.input_gain.valueChanged.connect(lambda v: self.valueChanged(v, 1))
         self.input_exposure.valueChanged.connect(lambda v: self.valueChanged(v, 0))
 
         self.parent.signal.connect(self.updateStatus)
+        self.parent.signal_new_image.connect(self.updateStatus)
+        self.parent.signal_properties_changed.connect(self.updateStatus)
         self.updateStatus()
 
     def valueChanged(self, value, i):
@@ -1003,6 +1013,15 @@ class ModuleExposure(QtWidgets.QGroupBox):
 
     def updateStatus(self):
         self.setTitle("Exposure")
+        if not self.input_exposure.slider_dragged:
+            self.input_exposure.setValue(self.cam.exposure())
+            # Readback is the baseline for the next edit, including after a mode switch.
+            self.input_exposure.last_emited_value = self.input_exposure.value()
+        if self.input_gain is not None and not self.input_gain.slider_dragged:
+            gain = self.cam.gain()
+            if gain is not None and np.isfinite(gain):
+                self.input_gain.setValue(gain)
+                self.input_gain.last_emited_value = self.input_gain.value()
 
 
 class ModuleROI(QtWidgets.QGroupBox):
@@ -1064,7 +1083,7 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         layout.addWidget(self)
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
-        self.setMaximumHeight(100)
+        self.setMaximumHeight(130)
 
         self.max_value = max_value
 
@@ -1085,7 +1104,16 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         self.label = QtWidgets.QLabel()
         self.layout.addWidget(self.label)
 
+        self.checkbox_autocontrast = QtWidgets.QCheckBox("Auto-contrast (fluorescence)")
+        self.checkbox_autocontrast.setChecked(self.parent.auto_contrast)
+        self.checkbox_autocontrast.stateChanged.connect(self.toggleAutoContrast)
+        self.layout.addWidget(self.checkbox_autocontrast)
+
         self.parent.signal_new_image.connect(self.updateStatus)
+
+    def toggleAutoContrast(self, state):
+        self.parent.auto_contrast = (state == QtCore.Qt.Checked)
+        self.parent.showImage()
 
     def updateStatus(self):
         max = self.parent.im_max
@@ -1235,6 +1263,27 @@ class Window(QtWidgets.QWidget):
         self.mic.getAllProperties()
         self.signal_properties_changed.emit()
 
+    def _exposure_key(self):
+        mode = self.mic.properties["current_mode"]
+        channel = None
+        if mode in (Microscope.MODE_FLUO, Microscope.MODE_FLUO_PH, Microscope.MODE_FLUO_DIC):
+            channel = self.mic.properties["current_filter"]
+        return mode, channel
+
+    def setMode(self, mode, fluo_channel=None):
+        """Restore live-view exposure without changing recording-mode behaviour."""
+        previous_key = self._exposure_key()
+        self._exposure_by_mode[previous_key] = self.cam.exposure()
+        self.mic.setMode(mode, fluo_channel)
+        self.mic.getAllProperties()
+        key = self._exposure_key()
+        try:
+            if key != previous_key and key in self._exposure_by_mode:
+                self.cam.setExposure(self._exposure_by_mode[key])
+            # An unvisited method/filter keeps the current exposure until edited.
+        finally:
+            self.signal_properties_changed.emit()
+
     def sceneEventFilter(self, event):
         if event.type() == QtCore.QEvent.GraphicsSceneMousePress and event.button() == QtCore.Qt.LeftButton:
             self.pan = True
@@ -1271,6 +1320,7 @@ class Window(QtWidgets.QWidget):
             self.mic = None
 
         self.cam = MemmapReader()
+        self._exposure_by_mode = {}
         print("... connected")
 
         self.setWindowTitle('LiveViewer')
@@ -1360,16 +1410,24 @@ class Window(QtWidgets.QWidget):
     def showImage(self):
         if self.im.shape[0] != 0:
             max_brightness = np.amax(self.im)
-
-            max_value = (100*max_brightness/self.cam.getMaxValue()-5.1)/(40-5.1)*255
-            if max_value > 255:
-                max_value = 255
-            if max_value < 0:
-                max_value = 0
-            factor = max_value/max_brightness
-            self.pixmap.setPixmap(QtGui.QPixmap(array2qimage(self.im*factor)))
+            if max_brightness <= 0:
+                im_display = np.zeros(self.im.shape, dtype=np.uint8)
+            elif self.auto_contrast:
+                im_f = self.im.astype(np.float64)
+                im_f -= np.percentile(im_f, 0.01)
+                hi = np.percentile(im_f, 99.99)
+                if hi < 1:
+                    hi = float(max_brightness)
+                im_display = np.clip(im_f / hi * 255, 0, 255).astype(np.uint8)
+            else:
+                max_value = (100*max_brightness/self.cam.getMaxValue()-5.1)/(40-5.1)*255
+                max_value = min(255, max(0, max_value))
+                im_display = self.im * (max_value / max_brightness)
+            # Display adjustment never changes the raw image used for recording.
+            self.pixmap.setPixmap(QtGui.QPixmap(array2qimage(im_display)))
 
     last_update_time = 0
+    auto_contrast = False
     def updateview(self, im):
         # update no more than 10 times per second
         if time.time() - self.last_update_time < 0.1:
@@ -1409,7 +1467,14 @@ if __name__ == '__main__':
     if sys.platform[:3] == 'win':
         myappid = 'fabrybiophysics.liveviewer' # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    window = Window()
+    try:
+        window = Window()
+    except Exception as err:
+        import traceback
+        traceback.print_exc()
+        splash.close()
+        QtWidgets.QMessageBox.critical(None, "LiveViewer could not start", str(err))
+        sys.exit(1)
     window.show()
     splash.finish(window)
     sys.exit(app.exec_())

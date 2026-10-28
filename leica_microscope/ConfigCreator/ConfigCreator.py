@@ -1,6 +1,7 @@
 from __future__ import division, print_function
 import os
 import sys
+import subprocess
 
 from qtpy import QtGui, QtCore, QtWidgets
 sys.path.insert(0, os.path.dirname(__file__))
@@ -102,9 +103,14 @@ class ModeDialog(QtWidgets.QDialog):
         self.exposure_time.setRange(1, 1e3)
         self.layout.addWidget(self.exposure_time, 1, 1)
 
-        self.layout.addWidget(QtWidgets.QLabel("Gain Value (0-255)"), 2, 0)
-        self.gain_value = QtWidgets.QSpinBox()
+        self.layout.addWidget(QtWidgets.QLabel("Gain"), 2, 0)
+        self.gain_value = QtWidgets.QDoubleSpinBox()
+        self.gain_value.setDecimals(2)
+        self.gain_value.setSingleStep(0.1)
         self.gain_value.setRange(0, 255)
+        self.gain_value.setToolTip(
+            "Basler gain is in dB. Use the camera's supported range shown in LiveViewer."
+        )
         self.layout.addWidget(self.gain_value, 2, 1)
 
         self.button = QtWidgets.QPushButton("ok")
@@ -116,10 +122,7 @@ class ModeDialog(QtWidgets.QDialog):
         mode = self.mode.itemText(self.mode.currentIndex())
         exp = self.exposure_time.value()
         gain = self.gain_value.value()
-        if gain:
-            text = "%s(%d, %d)" % (mode, exp, gain)
-        else:
-            text = "%s(%d)" % (mode, exp)
+        text = "%s(%d, %g)" % (mode, exp, gain)
         self.parent.add_mode(text)
         self.close()
 
@@ -452,9 +455,10 @@ class ConfigEditor(QtWidgets.QWidget):
             self.LoadConfig(options.config)
         else:
             self.LoadConfig(options.reset)
-        self.fields["stack"]["projection_mode"].currentIndexChanged.connect(
-            self.updateStackFields
-        )
+        if "projection_mode" in self.fields.get("stack", {}):
+            self.fields["stack"]["projection_mode"].currentIndexChanged.connect(
+                self.updateStackFields
+            )
         self.updateStackFields()
         self.move(0, 0)
         
@@ -503,7 +507,8 @@ class ConfigEditor(QtWidgets.QWidget):
                         self.config.set(section, key, value)
                     if section == "stack" and key == "projection_mode":
                         # Migrate the short-lived timed/legacy selector too.
-                        if (self.config.has_option("stack", "projection")
+                        if (value in ("timed", "legacy")
+                                and self.config.has_option("stack", "projection")
                                 and not self.config.getboolean(
                                     "stack", "projection")):
                             value = "off"
@@ -533,7 +538,7 @@ class ConfigEditor(QtWidgets.QWidget):
                             self.fields[section][key].setText(value)
                     except:
                         self.fields[section][key].setStyleSheet("background-color: #FDD;")
-            if self.config.has_section("stack"):
+            if "projection_mode" in self.fields.get("stack", {}):
                 self.config.remove_option("stack", "projection")
                 self.config.remove_option("stack", "projection_save_raw")
         except Exception as err:
@@ -545,7 +550,7 @@ class ConfigEditor(QtWidgets.QWidget):
 
     def updateStackFields(self, *_):
         """Show only the controls used by the selected stack/projection mode."""
-        if "stack" not in self.fields:
+        if "projection_mode" not in self.fields.get("stack", {}):
             return
         mode = self.fields["stack"]["projection_mode"].currentData()
         legacy_fields = {"slice_thickness", "slice_start", "slice_stop"}
@@ -578,11 +583,13 @@ class ConfigEditor(QtWidgets.QWidget):
     def ButtonSave(self):
         print("saving config")
         if self.options.program:
-            with open(options.config, "w") as fp:
+            with open(self.options.config, "w") as fp:
                 self.config.write(fp)
             self.close()
-            if options.program:
-                os.system(sys.executable + " " + options.program + " " + options.config)
+            subprocess.run(
+                [sys.executable, self.options.program, self.options.config],
+                check=True,
+            )
         else:
             path = QtWidgets.QFileDialog.getSaveFileName(self, "Open File")
             if isinstance(path, tuple):

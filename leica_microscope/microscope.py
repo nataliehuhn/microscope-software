@@ -838,6 +838,9 @@ class Microscope:
             self.cam.setGain(gain)
         if binning is not None:
             self.cam.setBinning(binning)
+        if self.cam is not None:
+            # Keep the viewer in sync with per-channel recording settings.
+            self.memmap_writer.store_parameters()
 
     """ recoding functions """
 

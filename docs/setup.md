@@ -52,10 +52,11 @@ See [the comparison table](microscope-comparison.md) for expected values.
 With acquisition stopped, activate the known working environment and open
 `start-live-view.bat`. Confirm image orientation, position readout and plate
 alignment before relying on saved positions. Open `start-record.bat` for the
-Record GUI. The settings file is `%APPDATA%\Microscope\Config_Experimental_Copy.txt`.
+Record GUI. The settings file is `%APPDATA%\Microscope\Config.txt`.
 Select an experiment output folder outside the checkout.
 
 Validate any changed camera settings or motion with an operator before using
 the checkout for routine experiments. To roll back, close this checkout's
 programs and launch the preserved original installation with its own shortcut.
-No original shortcuts or installed folders were changed by this migration.
+Desktop shortcuts may be repointed during deployment. Their original links and
+settings are backed up before replacement; original installed folders are retained.
