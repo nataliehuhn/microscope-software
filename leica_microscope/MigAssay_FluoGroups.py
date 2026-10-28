@@ -1,6 +1,7 @@
 """Single-image fluorescence time course, with brightfield at start and end.
 
-Edit the settings below, then run: python MigAssay_FluoGroups.py
+Edit the settings below, then run from the checkout root:
+python -m leica_microscope.MigAssay_FluoGroups
 Use --dry-run to check the position groups without connecting to the microscope.
 Position numbers are the non-comment rows in pos.txt, starting at 1.
 The file order is preserved: positions already grouped by condition stay grouped.
@@ -20,7 +21,7 @@ import numpy as np
 
 
 # --------------------------- EDIT THESE SETTINGS ---------------------------
-SOFTWARE_FOLDER = Path(r"C:\Software\codex-microscope-software\leica_microscope")
+SOFTWARE_FOLDER = Path(__file__).resolve().parent
 EXPERIMENT_FOLDER = Path(r"D:\EDIT_ME\experiment")
 POSITIONS_FILE = EXPERIMENT_FOLDER / "pos.txt"
 OUTPUT_FOLDER = EXPERIMENT_FOLDER / "data_fluorescence"
@@ -92,7 +93,7 @@ def validate_settings(settings):
 
 
 def load_microscope_class():
-    """Use the updated checkout, even when this script is copied elsewhere."""
+    """Use this checkout and reject an already imported different installation."""
     expected = SOFTWARE_FOLDER.resolve()
     if not (expected / "microscope.py").is_file():
         raise FileNotFoundError("Microscope software not found at {}".format(expected))

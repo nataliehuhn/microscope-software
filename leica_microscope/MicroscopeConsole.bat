@@ -1,9 +1,10 @@
 @echo off
 setlocal
 pushd "%~dp0" || exit /b 1
-set "PYTHONPATH=%~dp0..;%PYTHONPATH%"
+set "LEICA_REPO_ROOT=%~dp0.."
+set "PYTHONPATH=%LEICA_REPO_ROOT%;%PYTHONPATH%"
 python "%~dp0MicroscopeConsole.py" %*
-set "console_exit_code=%ERRORLEVEL%"
-IF %console_exit_code% NEQ 0 pause
+set "app_exit_code=%ERRORLEVEL%"
+pause
 popd
-exit /b %console_exit_code%
+exit /b %app_exit_code%

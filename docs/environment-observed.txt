@@ -1,0 +1,19 @@
+# Observed on the Mic3 migration PC on 2026-10-28.
+# Reference only; not a validated new-machine dependency lock.
+# Mic2's installed environment was not inventoried.
+Python 3.8.3
+numpy==1.18.5
+matplotlib==3.2.2
+PyQt5==5.15.1
+qtpy==1.9.0
+qtawesome==0.7.2
+qimage2ndarray==1.8.3
+pypylon==3.0.1
+pyserial==3.4
+tifffile==2020.10.1
+lucam==2020.1.1
+winshell==0.6
+pywin32==227
+QScintilla==2.11.5
+pytest==5.4.3
+setuptools==49.2.0.post20200714

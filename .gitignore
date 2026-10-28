@@ -131,3 +131,16 @@ leica_microscope/temp_config.txt
 /leica_microscope/includes/camera.mmap
 /leica_microscope/includes/camera.xml
 microscope_config.txt
+# Acquisition outputs and migration work are not source.
+.migration/
+*.mmap
+*.tif
+*.tiff
+**/camera.xml
+**/baseline_projection_*/
+**/preaccelerated_projection_*/
+**/preaccelerated_reproducibility_*/
+**/projection_distance_sweep_*/
+**/INT_4_AP_7/
+**/three_position_fast_projection_*/
+tools/experiments/test-run/

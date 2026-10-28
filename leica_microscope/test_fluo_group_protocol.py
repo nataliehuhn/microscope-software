@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-protocol = importlib.import_module("MigAssay_FluoGroups")
+protocol = importlib.import_module("leica_microscope.MigAssay_FluoGroups")
 
 
 class FakeMicroscope:

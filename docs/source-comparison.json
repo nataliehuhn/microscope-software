@@ -1,0 +1,222 @@
+{
+  "same": [
+    ".gitattributes",
+    ".gitignore",
+    "LICENSE",
+    "baseline_projection_runner.py",
+    "leica_microscope/ConfigCreator/Config_Default.txt",
+    "leica_microscope/ConfigCreator/Config_Template.txt",
+    "leica_microscope/ConfigCreator/FlowLayout.py",
+    "leica_microscope/ConfigCreator/Record_ConfigGrid_Default.txt",
+    "leica_microscope/ConfigCreator/Record_ConfigGrid_Template.txt",
+    "leica_microscope/ConfigCreator/Record_ConfigStack_Default.txt",
+    "leica_microscope/ConfigCreator/Record_ConfigStack_Template.txt",
+    "leica_microscope/ConfigCreator/Record_ConfigVideo_Default.txt",
+    "leica_microscope/ConfigCreator/Record_ConfigVideo_Template.txt",
+    "leica_microscope/ConfigLoader.py",
+    "leica_microscope/MicroscopeConsole.py",
+    "leica_microscope/__init__.py",
+    "leica_microscope/camera.py",
+    "leica_microscope/camera_hamamatsu.py",
+    "leica_microscope/camera_lumenera.py",
+    "leica_microscope/camera_memmap.py",
+    "leica_microscope/delf_record.py",
+    "leica_microscope/icons/Add.png",
+    "leica_microscope/icons/Help.png",
+    "leica_microscope/icons/Help2.png",
+    "leica_microscope/icons/LiveViewer.ico",
+    "leica_microscope/icons/MicroscopeIcon.svg",
+    "leica_microscope/icons/Record.ico",
+    "leica_microscope/icons/Splash.png",
+    "leica_microscope/icons/delete.png",
+    "leica_microscope/icons/delete2.png",
+    "leica_microscope/icons/undo.png",
+    "leica_microscope/includes/MemMap.py",
+    "leica_microscope/includes/QExtendedGraphicsView.py",
+    "leica_microscope/includes/__init__.py",
+    "leica_microscope/includes/camera_header.xml",
+    "leica_microscope/includes/comport.py",
+    "leica_microscope/includes/config.py",
+    "leica_microscope/includes/hamamatsu_camera.py",
+    "leica_microscope/includes/matplotlibwidget.py",
+    "leica_microscope/microscope_config_default.txt",
+    "leica_microscope/process_positions.py",
+    "leica_microscope/process_positions1.py",
+    "leica_microscope/process_positions12.py",
+    "leica_microscope/process_positions24.py",
+    "leica_microscope/process_positions6.py",
+    "leica_microscope/projection_motion.py",
+    "leica_microscope/reset.py",
+    "leica_microscope/testpos.txt",
+    "preaccelerated_projection_runner.py",
+    "preaccelerated_reproducibility_study.py",
+    "projection_calibration_report_20260831.md",
+    "projection_distance_sweep.py",
+    "projection_starting_position_20260831-171453.json",
+    "setup.py",
+    "tests/test_projection_calibration.py",
+    "tests/test_projection_dispatch.py"
+  ],
+  "different": [
+    {
+      "path": "README.md",
+      "status": "different"
+    },
+    {
+      "path": "contrast_enhance_projections.py",
+      "status": "mic2 only"
+    },
+    {
+      "path": "leica_microscope/12well.txt",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/24well.txt",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/35mmdish.txt",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/6well.txt",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/ConfigCreator/ConfigCreator.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/LiveViewer.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/MicroscopeConsole.bat",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/MigAssay_FluoGroups.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "leica_microscope/Record.bat",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/Record_Experimental_Copy.bat",
+      "status": "mic2 only"
+    },
+    {
+      "path": "leica_microscope/calibrate_projection.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "leica_microscope/camera_basler.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/generate_record.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/includes/helper_functions.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/live_viewer.bat",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/microscope.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/microscope_config.txt",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/plate_data0.json",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/plate_data01.json",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/plate_data06.json",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/plate_data12.json",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/plate_data24.json",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/projection_velocity_model.json",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/projection_velocity_model_backup_20260923-145631-129091.json",
+      "status": "mic3 only"
+    },
+    {
+      "path": "leica_microscope/reset.bat",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/streamer.py",
+      "status": "different"
+    },
+    {
+      "path": "leica_microscope/test_fluo_group_protocol.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "leica_microscope/test_gain_control.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "leica_microscope/test_live_viewer_exposure.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "leica_microscope/test_streamer_startup.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "tests/test_fast_scan_config.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "tests/test_position_finder.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "tests/test_projection_motion.py",
+      "status": "different"
+    },
+    {
+      "path": "tests/test_timed_projection.py",
+      "status": "mic3 only"
+    },
+    {
+      "path": "tests/test_timed_projection_gui.py",
+      "status": "mic2 only"
+    },
+    {
+      "path": "three_position_fast_projection_run.py",
+      "status": "mic2 only"
+    },
+    {
+      "path": "timed_projection_600um_experiment.py",
+      "status": "mic2 only"
+    },
+    {
+      "path": "timed_projection_experiment.py",
+      "status": "mic2 only"
+    }
+  ]
+}
