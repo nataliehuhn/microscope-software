@@ -1,0 +1,199 @@
+from __future__ import division, print_function
+from scipy.ndimage.filters import sobel
+import numpy as np
+import time
+import matplotlib.pyplot as plt
+from HelperFunctions import format_with_default
+
+def RecordZStack(mmc, mic, slice_thickness = 10, slice_start=-10, slice_stop=10, filename="Stacks%d.tif"):
+    global images, sobel, z_positions, StepToMu, sharp
+<<<<<<< working copy
+    SingleImages = True
+    StepToMu = 0.0038#mic.getResolutionZ()
+=======
+    SingleImages = False
+    StepToMu = mic.getResolutionZ()
+>>>>>>> destination
+
+    if slice_start > slice_stop:
+        slice_start, slice_stop = (slice_stop, slice_start)
+
+    slice_thickness /= StepToMu  
+    slice_thickness = int(slice_thickness)
+
+    z_positions = np.arange(slice_start,slice_stop+2)*slice_thickness
+    
+    z = mic.getZ()
+    mic.setZ(z+z_positions[0])
+    
+    if not SingleImages:
+        mmc.startContinuousSequenceAcquisition(1)
+    mic.waitTillEvent(moving=False)
+    mmc.clearImages()
+    for index,z_offset in enumerate(z_positions[1:]):
+        t = time.time()
+        if SingleImages:
+            mmc.snapImage()
+            mic.setZ(z+z_offset)
+            img = mmc.getImage()
+            mmc.saveImage(format_with_default(filename, z=index), img, microscope=mic)
+            mic.waitTillEvent(moving=False)
+        else:
+            while not mmc.getRemainingImageCount():
+                pass
+            img = mmc.getLastImage()
+            mic.setZ(z+z_offset)
+            mmc.saveImage(format_with_default(filename, z=index), img, microscope=mic)
+            mic.waitTillEvent(moving=False)
+            mmc.clearImages()
+            
+        msg = "Z Slice: %d/%d (%.2fs)       " % (index,slice_stop-slice_start,time.time()-t)
+        print(msg)#,"\r"*len(msg), end="")
+    mic.setZ(z)
+
+calibrated_proj_speed = None
+def RecordProj(mmc, mic, slice_thickness = 10, slice_start=-10, slice_stop=10, filename="proj.tif"):
+    global images, sobel, z_positions, StepToMu, sharp, calibrated_proj_speed
+
+    StepToMu = 0.0038#mic.getResolutionZ()
+
+    if slice_start > slice_stop:
+        slice_start, slice_stop = (slice_stop, slice_start)
+
+    slice_thickness /= StepToMu  
+    slice_thickness = int(slice_thickness)
+    
+    z_start = slice_start*slice_thickness
+    z_stop = (slice_stop+2)*slice_thickness
+
+    z_positions = np.arange(slice_start, slice_stop+2)*slice_thickness
+    
+    z = mic.getZ()
+    mic.setZ(z+z_start)
+
+    mmc.startContinuousSequenceAcquisition(1)
+    
+    mic.waitTillEvent(moving=False)
+    mmc.clearImages()
+    min_proj = np.zeros((1024, 1344), dtype=np.uint16) + 4095
+    max_proj = np.zeros((1024, 1344), dtype=np.uint16)
+    min_indices = np.zeros((1024, 1344), dtype=np.uint16)
+    max_indices = np.zeros((1024, 1344), dtype=np.uint16)
+
+    mmc.clearImages()
+    n_slices = np.abs(slice_stop - slice_start)
+
+    # Calculate the approximate speed to get the desired number of images using the current framerate
+    if calibrated_proj_speed is None:
+        print("Started calibration of z-speed for projection...")
+        time.sleep(4.5)  # to have accurate FPS
+        fps = 0
+        for i in range(5):
+            fps += mmc.memmap.fps
+            time.sleep(0.1)
+        fps /= 5.
+
+        calibrated_proj_speed = int(0.1*(np.abs(z_start-z_stop)/StepToMu)/(n_slices/fps))
+        print("Calibrated z-Speed for Projection: %.6f * (max speed)." % (calibrated_proj_speed/8820000))
+
+    mic.setZSpeed(calibrated_proj_speed, wait=1)
+    mic.setZ(z+z_stop)
+    shot_idx = 0
+    t_start = time.time()
+    while mic.isMoving()[2]:
+        while not mmc.getRemainingImageCount():
+            pass
+        shot = mmc.popNextImage()
+        
+        # create minimum projection
+        try:
+            mask = shot < min_proj
+            min_proj[mask] = shot[mask]
+            min_indices[mask] = shot_idx
+        except:
+            pass
+        
+        # create maximum projection
+        try:
+            mask = shot > max_proj
+            max_proj[mask] = shot[mask]
+            max_indices[mask] = shot_idx
+        except:
+            pass
+
+        shot_idx += 1
+    
+    # save minimum projection
+    mmc.saveImage(format_with_default(filename, z='MinProj'), min_proj, microscope=mic)
+    mmc.saveImage(format_with_default(filename, z='MaxProj'), max_proj, microscope=mic)
+    mmc.saveImage(format_with_default(filename, z='MinIndices{}'.format(shot_idx)), min_indices, microscope=mic)
+    mmc.saveImage(format_with_default(filename, z='MaxIndices{}'.format(shot_idx)), max_indices, microscope=mic)
+
+    msg = "Projection: %d slices (estimated %d). Duration: %.2fs" % (shot_idx, n_slices, time.time()-t_start)
+    print(msg)
+    
+    mic.setZSpeed(8820000, wait=1)
+    
+    mmc.clearImages()
+    mic.setZ(z)
+
+def GetZDrift(mmc, slice_thickness = 10, slice_count=21, StartSequence=1, viewer=None):
+    global images, sobel, z_positions, StepToMu, sharp
+    mic = mmc
+    StepToMu = mic.getResolutionZ()
+    if StepToMu < 0.0001:
+        StepToMu = 0.0038
+    slice_thickness = int(slice_thickness//StepToMu)
+    halft_slice_count = slice_count//2
+    
+    z = mic.getZ()
+    mic.setZOffset(-halft_slice_count*slice_thickness)
+    
+    was_running = mmc.isSequenceRunning()
+    if was_running:
+        mmc.stopSequenceAcquisition()
+    old_roi = mmc.getROI()
+    mmc.clearROI()
+    h = mmc.getImageHeight()
+    w = mmc.getImageWidth()
+    mmc.setROI(w//4, h//4, w//2, h//2)
+    mmc.startContinuousSequenceAcquisition(1)
+    
+    images = np.zeros([slice_count, mmc.getImageHeight(), mmc.getImageWidth()],dtype=np.uint16)
+    z_positions = np.arange(-halft_slice_count,halft_slice_count+1)*slice_thickness
+    sharp = np.zeros(slice_count)    
+    
+    mmc.clearImages()
+    for index,z_offset in enumerate(z_positions):
+        while not mmc.getRemainingImageCount():
+            pass
+        images[index,:,:] = mmc.getLastImage()
+        zoffset = mic.setZOffset(slice_thickness,nowait=1)
+        
+        im = images[index]
+        im = im/max([np.amax(im),0.01]) # don't divide by zero
+        sobelX = sobel(im/np.amax(im),0)/2
+        sobelY = sobel(im/np.amax(im),1)/2
+        sobelAll= np.sqrt(sobelX**2 + sobelY**2)
+        sharp[index] = np.std(sobelAll)
+        
+        mic.wait_till_answer(zoffset)
+        mmc.clearImages()
+        
+    mmc.stopSequenceAcquisition()
+    mmc.setROI(*old_roi)
+    if was_running:
+        mmc.startContinuousSequenceAcquisition(1)
+        
+    index = np.argmax(sharp)
+    #plt.plot(z_positions*StepToMu, sharp)
+    
+    if index == 0 or index == len(sharp)-1:
+        print("ERROR too much out of focus")
+        delta_z = 0
+    else:
+        corrected_index = sum( sharp[index-1:index+2]*np.array([-1,0,1]) )/np.sum(sharp[index-1:index+2])+index
+        delta_z = (corrected_index-halft_slice_count)*slice_thickness
+    print("Autofocus", delta_z*StepToMu)
+    mic.setZ(z+delta_z)
+    return delta_z

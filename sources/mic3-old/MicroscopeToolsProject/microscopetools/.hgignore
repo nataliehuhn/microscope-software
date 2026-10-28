@@ -1,0 +1,9 @@
+syntax: regexp
+/*\.pyc$
+syntax: glob
+Positions_tmp.txt
+ConfigLoader_*.txt
+LiveViewer.bat
+Record.bat
+LiveViewer_ExposureTimes.txt
+LiveViewer_GainValues.txt

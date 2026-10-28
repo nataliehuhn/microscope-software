@@ -1,0 +1,15 @@
+MicroscopeName = "Mic3"
+PixelSize = 4.0954 # 6.45 # um
+Coupler = 1.0
+FlipY = True
+#Tirf = "Com8"
+speed_percentage = 0.03
+ramp_speed = 600
+#Trigger = "Arduino"
+ZSpeedFactor = 0.1059
+Module = "Lumenera" # "HamamatsuHam"
+Adapter = "LuCam" # "HamamatsuHam_DCAM"
+GainProperty = "Gain" # "CONTRAST GAIN"
+Width = 2752 # 1344
+Height = 2192 # 1024
+BitDepth = 16 # 12

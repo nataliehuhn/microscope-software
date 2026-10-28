@@ -1,0 +1,4 @@
+[addon]
+name=Delfaluation
+file=Delfaluation.py
+icon=fa.wheelchair

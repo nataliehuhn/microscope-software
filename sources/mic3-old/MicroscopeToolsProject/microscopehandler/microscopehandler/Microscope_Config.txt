@@ -1,0 +1,14 @@
+MicroscopeName = "Mic3"
+PixelSize =  6.45  #um
+Coupler = 0.5
+FlipX = False
+FlipY = False
+speed_percentage = 0.30
+ramp_speed = 600
+ZSpeedFactor = 0.1059
+Module = "HamamatsuHam"
+Adapter = "HamamatsuHam_DCAM"
+GainProperty = "CONTRAST GAIN"
+Width = 1344
+Height = 1024
+BitDepth = 12

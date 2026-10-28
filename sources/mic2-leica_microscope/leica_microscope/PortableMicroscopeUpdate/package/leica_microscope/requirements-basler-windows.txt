@@ -1,0 +1,12 @@
+# Windows x64, Basler camera backend (Python 3.8–3.12)
+numpy>=1.20,<2
+matplotlib>=3.3,<3.9
+pyserial>=3.4
+psutil>=5.8
+tifffile>=2021.11
+pypylon>=1.7
+qtpy>=1.9,<3
+PyQt5>=5.15,<5.16
+qtawesome>=1.1
+qimage2ndarray>=1.9
+pywin32>=300

@@ -1,0 +1,58 @@
+[general]
+@desc=Specify the modes for the recording.
+
+record_modes = [Mode_Current()] #type:mode, desc:"Specify the recoding modes with exposure time and gain"
+#start_index = 0
+#use_current_z = False
+binning = 1 #min:1, max=8, desc:"Bin pixels. Allowed values: 1, 2, 4, 8 for 1x1, 2x2, 4x4 and 8x8 binning"
+roi = 2192 #max:2192, min:8, unit:"pixel height"
+wait_before_image = 0.0 #min:0, unit:"s", desc:"When a position is reached the recording waits the specified amount of seconds."
+#continuous_sequence = False # desc:"If True, the camera records continously during the whole measurement time and only the necessary images are saved. If False the camera only makes an image when the image hast to be saved."
+wait_at_start =  0 # min:0, unit:"min", desc:"How long to wait before the measurement should start"
+
+[files]
+@desc=Specify the positions file and the folder to save to.
+
+positions_filename = None #type:file, desc:"Record at all the positions in the file.\nIf no file is specified just record at the current position."
+target_folder = None #type:folder, desc:"Specify the folder to save the files.\nIf no folder is specified, open an dialog."
+
+# general data
+
+[grid]
+@desc=Record a grid with 'countX' times 'countY' images.
+      Start 'startX' images to the left/right (depending on sign)
+      and 'startY' images to the top/bottom.
+      Images have an overlap of 'overlap'.
+      
+startX = 0  #unit_plus:"images right", unit_minus:"images left"
+startY = 0  #unit_plus:"images below", unit_minus:"images above"
+countX = 1  #min:1
+countY = 1  #min:1
+overlap = 0.15
+
+#change_mode_single_image = True #desc:"Change mode for every single position.\nIf false change mode after grid recording."
+
+[stack]
+@desc=Record a z-stack at every position.
+      'slice_thickness' denotes the how far to move for each slice.
+      'slice_start' and 'slice_stop' specify how many slices below/above to use.
+      e.g. slice_start=-5 and slice_stop=5 would record 11 slices symmetric around the current position.
+      
+slice_thickness = 100.0  #min:0.01, unit:um
+slice_start = 0 #unit_plus:"slices above", unit_minus:"slices below"
+slice_stop = 0  #unit_plus:"slices above", unit_minus:"slices below"
+projection = False #desc:"Calculate a max/min projection instead of recoding a z-stack"
+
+[repetition]
+@desc=Record all positions 'repetition_count' times.
+      Between each repetition a minimum of 'repetition_time_delta' seconds must pass.
+      If the recording takes more time, 'repetition_time_delta' can be exceeded.
+
+repetition_count = 1  #min:1
+repetition_time_delta = 0.0  #unit:s
+repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."
+
+#[calls]
+#call_before_repetition = ""
+#call_after_repetition = ""
+#call_between_repetition = ""

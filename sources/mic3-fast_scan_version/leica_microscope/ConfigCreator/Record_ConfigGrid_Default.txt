@@ -1,0 +1,7 @@
+[grid]
+startx = -1
+starty = -1
+countx = 3
+county = 3
+overlap = 0.15
+change_mode_single_image = True

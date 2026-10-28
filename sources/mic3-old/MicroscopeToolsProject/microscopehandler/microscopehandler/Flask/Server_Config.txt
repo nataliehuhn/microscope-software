@@ -1,0 +1,5 @@
+TOKEN    = '77952384:AAFnqEzxDdlh3XMP0U3PzwZGu1Svd4npOCg'
+HOST     = '131.188.117.88'
+PORT     = 80
+CERT     = 'server88.crt'
+CERT_KEY = 'server88.key'

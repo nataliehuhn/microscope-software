@@ -1,0 +1,13 @@
+[grid]
+@desc=Record a grid with 'countX' times 'countY' images.
+      Start 'startX' images to the left/right (depending on sign)
+      and 'startY' images to the top/bottom.
+      Images have an overlap of 'overlap'.
+      
+startX = -1  #unit_plus:"images right", unit_minus:"images left"
+startY = -1  #unit_plus:"images below", unit_minus:"images above"
+countX = 3  #min:1
+countY = 3  #min:1
+overlap = 0.15
+
+change_mode_single_image = True #desc:"Change mode for every single position.\nIf false change mode after grid recording."

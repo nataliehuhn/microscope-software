@@ -1,0 +1,36 @@
+[general]
+record_modes = [Mode_Current()]
+binning = 1
+roi = 1024
+wait_before_image = 0
+continuous_sequence = False
+
+[files]
+positions_filename = None
+target_folder = None
+use_current_z = False
+
+[grid]
+startx = 0
+starty = 0
+countx = 1
+county = 1
+overlap = 0.15
+
+change_mode_single_image = True
+
+[stack]
+slice_thickness = 100.0
+slice_start = 0
+slice_stop = 0
+projection = False
+
+[repetition]
+repetition_count = 1
+repetition_time_delta = 0
+repeat_positions_separately = False
+
+[calls]
+call_before_repetition = ""
+call_between_repetition = ""
+call_after_repetition = ""

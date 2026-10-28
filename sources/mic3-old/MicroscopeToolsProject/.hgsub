@@ -1,0 +1,11 @@
+microscopetools = microscopetools 
+microscopehandler = microscopehandler
+qextendedgraphicsview = qextendedgraphicsview
+
+[subpaths]
+https://bitbucket.org/fabry_biophysics/microscopetoolsproject/microscopetools = https://bitbucket.org/fabry_biophysics/microscopetools
+https://bitbucket.org/fabry_biophysics/microscopetoolsproject/microscopehandler = https://bitbucket.org/fabry_biophysics/microscopehandler
+https://bitbucket.org/fabry_biophysics/microscopetoolsproject/qextendedgraphicsview = https://bitbucket.org/fabry_biophysics/qextendedgraphicsview
+ssh://hg@bitbucket.org/fabry_biophysics/microscopetoolsproject/microscopetools = ssh://hg@bitbucket.org/fabry_biophysics/microscopetools
+ssh://hg@bitbucket.org/fabry_biophysics/microscopetoolsproject/microscopehandler = ssh://hg@bitbucket.org/fabry_biophysics/microscopehandler
+ssh://hg@bitbucket.org/fabry_biophysics/microscopetoolsproject/qextendedgraphicsview = ssh://hg@bitbucket.org/fabry_biophysics/qextendedgraphicsview

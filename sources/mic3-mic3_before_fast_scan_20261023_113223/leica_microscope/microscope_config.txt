@@ -1,0 +1,15 @@
+microscope_name = "Mic3"
+#pixel_size =  4.0954 # um
+pixel_size =  3.45 # um
+coupler = 1.00
+flip_y = False
+filp_x = False
+#camera = "lumenera"
+camera = "basler"
+port = "COM4"
+stage_flip_x = False
+stage_flip_y = False
+stage_min_x = 0
+stage_max_x = 20000000
+stage_min_y = 0
+stage_max_y = 17000000

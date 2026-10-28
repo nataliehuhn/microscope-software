@@ -1,0 +1,16 @@
+syntax: glob
+# Setuptools distribution folder.
+dist/
+build/
+.idea/
+
+# Python egg metadata, regenerated from source files by setuptools.
+*.egg-info
+
+syntax: regexp
+/*\.pyc$
+/*\.dat$
+/*\.baat$
+Flask/status.txt
+serial_log.txt
+Microscope_Config.txt

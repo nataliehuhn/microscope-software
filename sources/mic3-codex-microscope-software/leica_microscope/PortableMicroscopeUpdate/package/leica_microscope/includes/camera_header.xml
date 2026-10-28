@@ -1,0 +1,6 @@
+<?xml version="1.0" ?>
+<memmap file="camera.mmap">
+    <entry name="pid" type="uint32"/>
+    <entry name="shape" shape="3" type="uint8"/>
+</memmap>
+

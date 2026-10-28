@@ -1,0 +1,10 @@
+[stack]
+@desc=Record a z-stack at every position.
+      'slice_thickness' denotes the how far to move for each slice.
+      'slice_start' and 'slice_stop' specify how many slices below/above to use.
+      e.g. slice_start=-5 and slice_stop=5 would record 11 slices symmetric around the current position.
+      
+slice_thickness = 100.0  #min:0.01, unit:um
+slice_start = -5 #unit_plus:"slices above", unit_minus:"slices below"
+slice_stop = 5  #unit_plus:"slices above", unit_minus:"slices below"
+projection = False #desc:"Calculate a max/min projection instead of recoding a z-stack"
