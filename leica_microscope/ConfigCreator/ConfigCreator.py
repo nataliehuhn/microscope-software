@@ -331,6 +331,8 @@ class ConfigEditor(QtWidgets.QWidget):
         self.config_default = Config(options.template)
         self.fields = {}
         self.meta = {}
+        self.group_boxes = {}
+        self.row_widgets = {}
         for section in self.config_default.sections():
             box = QtWidgets.QGroupBox(section)
             box.setFlat(True)
@@ -339,6 +341,8 @@ class ConfigEditor(QtWidgets.QWidget):
             box.setMinimumHeight(len(items)*25+30+10)
             self.fields[section] = {}
             self.meta[section] = {}
+            self.row_widgets[section] = {}
+            self.group_boxes[section] = box
 
             for index, item in enumerate(items):
                 if item[0].startswith("@"):
@@ -383,6 +387,22 @@ class ConfigEditor(QtWidgets.QWidget):
                 elif meta["type"] == "mode":
                     edit_field = ModeSelector(value)
                     edit_field.textChanged.connect(lambda value, section=section, name=name: self.changed(section, name, value))
+                elif meta["type"] == "choice":
+                    edit_field = QtWidgets.QComboBox()
+                    values = meta["values"].split("|")
+                    labels = meta.get("labels", meta["values"]).split("|")
+                    if len(values) != len(labels):
+                        raise ValueError("Choice labels and values must match")
+                    for choice_label, choice_value in zip(labels, values):
+                        edit_field.addItem(choice_label, choice_value)
+                    selected = edit_field.findData(value)
+                    if selected < 0:
+                        raise ValueError("Unknown default choice for {}".format(name))
+                    edit_field.setCurrentIndex(selected)
+                    edit_field.currentIndexChanged.connect(
+                        lambda index, field=edit_field, section=section, name=name:
+                        self.changed(section, name, field.itemData(index))
+                    )
                 else:
                     edit_field = QtWidgets.QLineEdit(value)
                     edit_field.textChanged.connect(lambda value, section=section, name=name: self.changed(section, name, value))
@@ -397,6 +417,9 @@ class ConfigEditor(QtWidgets.QWidget):
                 reset_button.setToolTip("Revert to default value")
                 reset_button.clicked.connect(lambda clicked, section=section, name=name: self.reset(section, name))
                 box_layout.addWidget(reset_button, index, 3)
+                self.row_widgets[section][name] = (
+                    label, edit_field, reset_button
+                )
             box.setLayout(box_layout)
             layout_vert.addWidget(box)
 
@@ -429,6 +452,10 @@ class ConfigEditor(QtWidgets.QWidget):
             self.LoadConfig(options.config)
         else:
             self.LoadConfig(options.reset)
+        self.fields["stack"]["projection_mode"].currentIndexChanged.connect(
+            self.updateStackFields
+        )
+        self.updateStackFields()
         self.move(0, 0)
         
         # center window in desktop
@@ -463,6 +490,27 @@ class ConfigEditor(QtWidgets.QWidget):
                         value, meta = getMeta(self.config.get(section, key))
                     except ConfigParser.NoOptionError:
                         value, meta = getMeta(self.config_default.get(section, key))
+                        if section == "stack" and key == "projection_mode":
+                            # An older saved config's projection checkbox
+                            # maps to off or the old/default method.
+                            value = (
+                                "default" if self.config.has_option(
+                                    "stack", "projection"
+                                ) and self.config.getboolean(
+                                    "stack", "projection"
+                                ) else "off"
+                            )
+                        self.config.set(section, key, value)
+                    if section == "stack" and key == "projection_mode":
+                        # Migrate the short-lived timed/legacy selector too.
+                        if (self.config.has_option("stack", "projection")
+                                and not self.config.getboolean(
+                                    "stack", "projection")):
+                            value = "off"
+                        else:
+                            value = {
+                                "timed": "optimized", "legacy": "default"
+                            }.get(value, value)
                         self.config.set(section, key, value)
                     field = self.fields[section][key]
                     meta = self.meta[section][key]
@@ -476,14 +524,46 @@ class ConfigEditor(QtWidgets.QWidget):
                                 raise ValueError
                         elif meta["type"] == "bool":
                             self.fields[section][key].setChecked(value)
+                        elif meta["type"] == "choice":
+                            selected = self.fields[section][key].findData(value)
+                            if selected < 0:
+                                raise ValueError("Unknown choice {}".format(value))
+                            self.fields[section][key].setCurrentIndex(selected)
                         else:
                             self.fields[section][key].setText(value)
                     except:
                         self.fields[section][key].setStyleSheet("background-color: #FDD;")
+            if self.config.has_section("stack"):
+                self.config.remove_option("stack", "projection")
+                self.config.remove_option("stack", "projection_save_raw")
         except Exception as err:
             raise err
         finally:
             self.no_update = False
+        if "stack" in self.fields:
+            self.updateStackFields()
+
+    def updateStackFields(self, *_):
+        """Show only the controls used by the selected stack/projection mode."""
+        if "stack" not in self.fields:
+            return
+        mode = self.fields["stack"]["projection_mode"].currentData()
+        legacy_fields = {"slice_thickness", "slice_start", "slice_stop"}
+        optimized_fields = {
+            "projection_start_um", "projection_stop_um", "projection_time_s"
+        }
+        visible_count = 0
+        for name, widgets in self.row_widgets["stack"].items():
+            visible = (
+                (name not in legacy_fields and name not in optimized_fields)
+                or (name in legacy_fields and mode != "optimized")
+                or (name in optimized_fields and mode == "optimized")
+            )
+            for widget in widgets:
+                widget.setVisible(visible)
+            visible_count += int(visible)
+        self.group_boxes["stack"].setMinimumHeight(visible_count * 25 + 40)
+        self.group_boxes["stack"].layout().invalidate()
 
     def ButtonLoad(self):
         path = QtWidgets.QFileDialog.getOpenFileName(self, "Open File")
@@ -542,6 +622,11 @@ class ConfigEditor(QtWidgets.QWidget):
             field.setValue(value)
         elif isinstance(field, QtWidgets.QCheckBox):
             field.setChecked(value == "True")
+        elif isinstance(field, QtWidgets.QComboBox):
+            selected = field.findData(value)
+            if selected < 0:
+                raise ValueError("Unknown default choice {}".format(value))
+            field.setCurrentIndex(selected)
         else:
             field.setText(value)
 

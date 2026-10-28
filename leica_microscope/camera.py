@@ -1,6 +1,7 @@
 from leica_microscope.includes.config import getConfig
 import importlib
 import numpy as np
+import time
 from typing import List
 
 
@@ -62,6 +63,40 @@ class CameraBase:
             buffer: The buffer.
         """
         raise NotImplementedError
+
+    def getVideoWithTimestamps(
+            self, buffer: np.ndarray, started_event=None,
+            first_frame_event=None) -> dict:
+        """Record a video and return approximate per-frame timing.
+
+        Camera backends with hardware timestamps should override this method.
+        The generic fallback uses the reported frame rate and anchors the
+        sequence to host monotonic time.
+        """
+        start_time = time.perf_counter()
+        if started_event is not None:
+            started_event.set()
+        # Generic camera backends cannot expose an in-burst callback. Treat
+        # acquisition start as the best available first-frame boundary.
+        if first_frame_event is not None:
+            first_frame_event.set()
+        self.getVideo(buffer)
+        end_time = time.perf_counter()
+        frame_count = buffer.shape[0]
+        fps = float(self.getFramerate())
+        if frame_count:
+            frame_times = end_time - np.arange(
+                frame_count - 1, -1, -1, dtype=float
+            ) / fps
+        else:
+            frame_times = np.zeros(0, dtype=float)
+        return {
+            "host_times_s": frame_times,
+            "camera_ticks": None,
+            "camera_tick_frequency_hz": None,
+            "capture_start_host_s": start_time,
+            "capture_end_host_s": end_time,
+        }
 
     def getImage(self) -> np.ndarray:
         """

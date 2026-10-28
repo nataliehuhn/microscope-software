@@ -29,7 +29,7 @@ class Camera(CameraBase):
         # TODO we need to expose these values if we want to change them during runtime
         self.camera.AutoExposureTimeLowerLimit = 30.0  # micro seconds
         self.camera.AutoExposureTimeUpperLimit = 1800  # micro seconds
-        self.camera.GainAuto = "Continuous"
+        self.camera.GainAuto = "Off"  # "Continuous"
         self.camera.AutoTargetBrightness = 0.5
         self.camera.AutoGainLowerLimit = 0
         self.camera.AutoGainUpperLimit = 1#36
@@ -74,15 +74,139 @@ class Camera(CameraBase):
         return np.zeros([count, self.getHeight(), self.getWidth()], dtype=self.getDtype())
 
     def getVideo(self, buffer):
+        self.getVideoWithTimestamps(buffer)
+        return buffer
+
+    def getVideoWithTimestamps(
+            self, buffer, started_event=None, first_frame_event=None):
+        frame_count = buffer.shape[0]
+        camera_ticks = np.zeros(frame_count, dtype=np.uint64)
+        host_times = np.zeros(frame_count, dtype=np.float64)
+        grab_succeeded = np.zeros(frame_count, dtype=bool)
+        capture_start = time.perf_counter()
         self.camera.StartGrabbingMax(buffer.shape[0])
+        if started_event is not None:
+            started_event.set()
         for i in range(buffer.shape[0]):
             grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+            try:
+                host_times[i] = time.perf_counter()
+                camera_ticks[i] = grabResult.GetTimeStamp()
+                grab_succeeded[i] = grabResult.GrabSucceeded()
+                if i == 0 and first_frame_event is not None:
+                    first_frame_event.set()
+                if grab_succeeded[i]:
+                    im = grabResult.Array
+                    if self.config["flip_y"]:
+                        im = im[::-1]
+                    if self.config.get("flip_x", self.config.get("filp_x", False)):
+                        im = im[:, ::-1]
+                    buffer[i] = im
+            finally:
+                grabResult.Release()
+        capture_end = time.perf_counter()
 
-            if grabResult.GrabSucceeded():
-                im = grabResult.Array
-                if self.config["flip_y"]:
-                    im = im[::-1]
-                buffer[i] = im
+        if not np.all(grab_succeeded):
+            failed = np.flatnonzero(~grab_succeeded).tolist()
+            raise RuntimeError("Basler failed to grab frames {}".format(failed))
+
+        tick_frequency = None
+        if frame_count > 1:
+            tick_delta = float(np.median(np.diff(camera_ticks.astype(np.float64))))
+            fps = float(self.getFramerate())
+            if tick_delta > 0 and fps > 0:
+                tick_frequency = tick_delta * fps
+
+        return {
+            "host_times_s": host_times,
+            "camera_ticks": camera_ticks,
+            "camera_tick_frequency_hz": tick_frequency,
+            "capture_start_host_s": capture_start,
+            "capture_end_host_s": capture_end,
+        }
+
+    def latchTimestampClock(self, samples=8):
+        """Align the Basler nanosecond clock to the host monotonic clock.
+
+        A timestamp latch is bracketed by host timestamps.  The shortest
+        transaction gives the tightest bound on the host/camera offset.
+        Basler ace USB camera timestamps are in nanoseconds.
+        """
+        if self.camera.IsGrabbing():
+            raise RuntimeError("Timestamp clock must be latched before grabbing")
+        observations = []
+        for _ in range(samples):
+            before = time.perf_counter()
+            self.camera.TimestampLatch.Execute()
+            ticks = int(self.camera.TimestampLatchValue.Value)
+            after = time.perf_counter()
+            observations.append((after - before, (before + after) / 2.0, ticks))
+        delay, host_time, ticks = min(observations)
+        return {
+            "host_time_s": host_time,
+            "camera_ticks": ticks,
+            "tick_frequency_hz": 1000000000.0,
+            "offset_uncertainty_s": delay / 2.0,
+        }
+
+    def getMaximumFramerateAtShortExposure(self):
+        """Measure the configured full-resolution readout limit, then restore exposure."""
+        if self.camera.IsGrabbing():
+            raise RuntimeError("Cannot probe frame rate while grabbing")
+        original_exposure_us = float(self.camera.ExposureTime.Value)
+        try:
+            self.camera.ExposureTime = 1000.0
+            return float(self.getFramerate())
+        finally:
+            self.camera.ExposureTime = original_exposure_us
+
+    def streamFramesWithTimestamps(
+            self, on_frame, stop_event, started_event=None,
+            first_frame_event=None):
+        """Stream frames to a callback without allocating a video stack.
+
+        The callback must finish using the image before returning; the Pylon
+        buffer is released immediately afterward.  Chunk timestamps identify
+        acquisition start, not host retrieval time.
+        """
+        self.camera.StartGrabbing(pylon.GrabStrategy_OneByOne)
+        if started_event is not None:
+            started_event.set()
+        count = 0
+        try:
+            while not stop_event.is_set():
+                result = self.camera.RetrieveResult(
+                    5000, pylon.TimeoutHandling_ThrowException
+                )
+                try:
+                    retrieved_at = time.perf_counter()
+                    if not result.GrabSucceeded():
+                        raise RuntimeError(
+                            "Basler frame grab failed: {}".format(
+                                result.GetErrorDescription()
+                            )
+                        )
+                    if count == 0 and first_frame_event is not None:
+                        first_frame_event.set()
+                    image = result.Array
+                    if self.config["flip_y"]:
+                        image = image[::-1]
+                    if self.config.get("flip_x", self.config.get("filp_x", False)):
+                        image = image[:, ::-1]
+                    try:
+                        exposure_us = float(result.ChunkExposureTime.Value)
+                    except (AttributeError, genicam.GenericException):
+                        exposure_us = float(self.camera.ExposureTime.Value)
+                    on_frame(
+                        image, int(result.GetTimeStamp()), exposure_us,
+                        int(result.GetBlockID()), retrieved_at,
+                    )
+                    count += 1
+                finally:
+                    result.Release()
+        finally:
+            self.camera.StopGrabbing()
+        return count
 
     do_streaming = False
     def startStreaming(self, callback):
@@ -102,7 +226,7 @@ class Camera(CameraBase):
                         im = grabResult.Array
                         if self.config["flip_y"]:
                             im = im[::-1]
-                        if self.config["flip_x"]:
+                        if self.config.get("flip_x", self.config.get("filp_x", False)):
                             im = im[:, ::-1]
                         #print(time.time(), im.min(), im.max())
                         callback(im, TimeStampCam)
@@ -156,7 +280,7 @@ class Camera(CameraBase):
         return None
 
     def setGain(self, gain: float):
-        print("WARNING: gain is automatically adjusted")
+        print(f"WARNING: gain is automatically adjusted to {gain}")
 
     def get_gain_range(self):
         return [0, 10000]
