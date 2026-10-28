@@ -293,7 +293,7 @@ class Mode_Fluo6(Mode_Fluo):
 class Mode_Current(Mode):
     name = ""
 
-    def __init__(self, exp=None, gain=0):
+    def __init__(self, exp=None, gain=None):
         self.exp = exp
         self.gain = gain
 

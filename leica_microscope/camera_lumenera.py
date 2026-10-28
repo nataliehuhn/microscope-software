@@ -14,7 +14,7 @@ class Fast:
         self.cam.fast_enabled = True
         frameformat, framerate = self.lucam.GetFormat()
         snapshot = Lucam.Snapshot(exposure=self.lucam.exposure, gain=self.lucam.gain,
-                                  timeout=1000.0, format=frameformat)
+                                  timeout=60000.0, format=frameformat)
         self.lucam.EnableFastFrames(snapshot)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -28,7 +28,7 @@ class Fast:
 class Camera(CameraBase):
     def __init__(self):
         super().__init__()
-        self.config = getConfig(dict(PixelSize=4.0954))
+        self.config = getConfig(dict(PixelSize=4.0954, filp_y=False, flip_x=False))
         self.lucam = Lucam()
         self.resetFormat()
 
@@ -85,6 +85,8 @@ class Camera(CameraBase):
         # the TakeVideo unfortunately does cause a timeout
         """
         self.lucam.StreamVideoControl('start_streaming')  # streaming without display
+        self.lucam.SetTimeout(False, 600000)
+        self.lucam.SetTimeout(True, 600000)
         self.lucam.TakeVideo(None, out=buffer)
         self.lucam.StreamVideoControl('stop_streaming')
         """
@@ -125,9 +127,14 @@ class Camera(CameraBase):
         return buffer >> 2
 
     def startStreaming(self, callback):
+        if self.callbackid is not None:
+            print("stop previous")
+            self.stopStreaming()
         # get the shape of the images
+        print("getFormat")
         frameformat, framerate = self.lucam.GetFormat()
         shape = (frameformat.height, frameformat.width)
+        print("getDtype")
         dtype = self.getDtype()
 
         # define a callback to transform the data into a numpy image
@@ -138,19 +145,25 @@ class Camera(CameraBase):
             if self.config["flip_x"]:
                 im = im[:, ::-1]
             callback(im >> 2)
-
+        print("add callback")
         # add the callback
         self.callbackid = self.lucam.AddStreamingCallback(streaming_callback)
         self.streaming_callback = callback
-
+        print("startVideoStreamControl")
         # start the streaming
         self.lucam.StreamVideoControl('start_streaming')
+        print("done")
 
     def stopStreaming(self):
+        if self.callbackid is None:
+            return
         # stop the streaming
+        print("stop streaming")
         self.lucam.StreamVideoControl('stop_streaming')
         # and remove the callback
+        print("remove allback")
         self.lucam.RemoveStreamingCallback(self.callbackid)
+        print("set callback id to None")
         self.callbackid = None
 
     def getImage(self):

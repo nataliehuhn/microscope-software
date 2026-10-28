@@ -3,13 +3,18 @@ import time
 import psutil
 import subprocess
 import os
+import sys
 from pathlib import Path
+
+# Keep direct worker launches tied to the same checkout as this file.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from leica_microscope.camera import Camera
 from leica_microscope.includes.MemMap import MemMap
 from leica_microscope.includes.config import getConfig
 
-base_dir = Path(__file__).parent
+base_dir = Path(__file__).resolve().parent
 memmap_def_header = base_dir / "includes/camera_header.xml"
 memmap_def = base_dir / "includes/camera.xml"
 memmap_file = base_dir / "includes/camera.mmap"
@@ -112,7 +117,10 @@ class MemmapWriter:
         self.store_parameters()
 
         # save the current shape of the memmory map
-        self.mmap.saveXML(memmap_def)
+        # Publish the definition only after it has been written completely.
+        pending_def = memmap_def.with_suffix(".xml.tmp")
+        self.mmap.saveXML(pending_def)
+        os.replace(pending_def, memmap_def)
 
     def store_parameters(self):
         # store all camera parameters in the memmory map
@@ -169,14 +177,16 @@ class MemmapWriter:
                             print("ERROR unknown command", command.name)
                     except Exception as err:
                         print(err)
-                    command.done = True
-                    # store the current parameters
+                    # Publish the actual camera values before acknowledging.
                     self.store_parameters()
+                    command.done = True
 
 
 class MemmapReader:
     streamer = None
     inactive_timer = None
+    startup_timeout = 30.0
+    parameter_timeout = 15.0
 
     def __init__(self):
         self.mmap = MemMap(memmap_def_header)
@@ -195,18 +205,38 @@ class MemmapReader:
         except AttributeError:
             pass
         try:
-            os.remove("includes/camera.mmap")
-        except PermissionError:
+            os.remove(memmap_file)
+        except (FileNotFoundError, PermissionError):
             pass
 
         # remove the memmap definition
         if os.path.exists(memmap_def):
             os.remove(memmap_def)
-        # start the steamer
-        self.streamer = subprocess.Popen(["python", "streamer.py"])
-        # wait until the streamer started (and finished writing the file)
-        while not os.path.exists(memmap_def) and not has_handle(memmap_def):
-            import time
+        # Use the viewer's interpreter and this checkout, independent of cwd.
+        self.streamer = subprocess.Popen(
+            [sys.executable, "-u", str(base_dir / "streamer.py")],
+            cwd=str(base_dir),
+        )
+        # A failed worker must not leave the viewer waiting forever.
+        deadline = time.monotonic() + self.startup_timeout
+        while True:
+            exit_code = self.streamer.poll()
+            if exit_code is not None:
+                raise RuntimeError(
+                    "Camera streamer exited with code {}. Check the console "
+                    "for the camera error.".format(exit_code)
+                )
+            if memmap_def.exists():
+                break
+            if time.monotonic() >= deadline:
+                self.streamer.kill()
+                self.streamer.wait()
+                raise RuntimeError(
+                    "Camera did not start within {:g} seconds. Check its "
+                    "connection and close other camera applications.".format(
+                        self.startup_timeout
+                    )
+                )
             time.sleep(0.01)
         self.mmap = MemMap(memmap_def)
 
@@ -272,10 +302,18 @@ class MemmapReader:
         command.name = str(name)
         command.value = str(value)
         command.done = False
-        command.written = True
         command.counter = counter+1
-        while command.done is False:
-            pass
+        command.written = True
+        deadline = time.monotonic() + self.parameter_timeout
+        # MemMap returns numpy.bool_, so identity comparison with False fails.
+        while not command.done:
+            if not psutil.pid_exists(int(self.mmap.pid)):
+                raise RuntimeError("Camera process stopped while setting {}".format(name))
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Camera did not apply {} within {:g} seconds".format(
+                    name, self.parameter_timeout
+                ))
+            time.sleep(0.001)
         return
 
     def roi(self):
@@ -294,9 +332,14 @@ class MemmapReader:
         return self.mmap.exposure[1:]
 
     def gain(self) -> float:
-        return self.mmap.gain[0]
+        gain = float(self.mmap.gain[0])
+        return gain if np.isfinite(gain) else None
 
     def setGain(self, gain: float):
+        gain = float(gain)
+        minimum, maximum = self.get_gain_range()
+        if not np.isfinite(gain) or not minimum <= gain <= maximum:
+            raise ValueError("Gain must be between {:g} and {:g}".format(minimum, maximum))
         self.setParameter("gain", str(gain))
 
     def get_gain_range(self):

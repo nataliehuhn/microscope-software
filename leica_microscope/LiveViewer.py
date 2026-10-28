@@ -4,6 +4,10 @@ import sys
 from pathlib import Path
 import json
 
+# Direct launches must use this checkout, even if another copy is installed.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 """ some magic to prevent PyQt5 from swallowing exceptions """
 # Back up the reference to the exceptionhook
 sys._excepthook = sys.excepthook
@@ -306,8 +310,7 @@ class ModuleMethods(QtWidgets.QGroupBox):
         self.setTitle(f"Methods {self.mic.mode_id_to_name(self.index)} -> {method}")
         app.processEvents()
         self.updateButtons()
-        self.mic.setMode(method)
-        self.parent.update()
+        self.parent.setMode(method)
 
     def updateStatus(self):
         self.index = self.mic.properties["current_mode"]
@@ -400,8 +403,7 @@ class ModuleFilters(QtWidgets.QGroupBox):
         self.setTitle(f'Filters {self.mic.properties["filters"][self.mic.properties["current_filter"]-1]} -> {self.mic.properties["filters"][i]}')
         app.processEvents()
         self.updateButtons()
-        self.mic.setMode(self.mic.properties["current_mode"], i + 1)
-        self.parent.update()
+        self.parent.setMode(self.mic.properties["current_mode"], i + 1)
 
     def updateStatus(self):
         self.setTitle("Filters %s" % self.mic.properties["filters"][self.mic.properties["current_filter"]-1])
@@ -450,6 +452,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.conversion = self.mic.properties["resolution"]
 
         self.plot = MatplotlibWidget()
+        self.plot.setToolTip("Double-click with the left mouse button to move XY to that position. Focus (Z) stays unchanged.")
         self.layout.addWidget(self.plot)
 
         self.sliders = []
@@ -500,11 +503,10 @@ class ModulePosition(QtWidgets.QGroupBox):
         ax.set_xlim(919500, 0)
         ax.set_ylim(600750, 0)
 
-        def onclick(event):
-            self.mic.setXYPos(int(event.xdata), int(event.ydata))
-
-        cid = self.plot.figure.canvas.mpl_connect('button_press_event', onclick)
         self.ax = ax
+        self._position_click_connection = self.plot.figure.canvas.mpl_connect(
+            'button_press_event', self.onPositionDoubleClick
+        )
 
         self.positions = []
         self.position_names = []
@@ -567,6 +569,40 @@ class ModulePosition(QtWidgets.QGroupBox):
 
         self.parent.signal.connect(self.updateStatus)
 
+    def onPositionDoubleClick(self, event):
+        """Move to the displayed XY coordinate, preserving the current focus."""
+        if (not event.dblclick or event.button != 1
+                or event.inaxes is not self.ax
+                or event.xdata is None or event.ydata is None):
+            return
+        if not np.isfinite(event.xdata) or not np.isfinite(event.ydata):
+            return
+
+        x, y = int(event.xdata), int(event.ydata)
+        try:
+            # The plot uses display coordinates. Check limits in controller
+            # coordinates; setXYPos applies the same orientation conversion.
+            raw_x = self.mic.processXPos(x)
+            raw_y = self.mic.processYPos(y)
+            config = self.mic.config
+            if not (config["stage_min_x"] <= raw_x <= config["stage_max_x"]
+                    and config["stage_min_y"] <= raw_y <= config["stage_max_y"]):
+                raise ValueError(
+                    "The clicked position is outside this microscope's XY travel limits."
+                )
+            self.mic.setXYPos(x, y)
+            position = self.mic.getPos()
+        except (OSError, RuntimeError, ValueError) as error:
+            QtWidgets.QMessageBox.warning(self, "Cannot move to position", str(error))
+            return
+        self.updatePositionMarker(position)
+
+    def updatePositionMarker(self, position=None):
+        if position is None:
+            position = self.mic.getPos()
+        self.plot_line.set_data([position[0]], [position[1]])
+        self.plot.draw_idle()
+
     def selectPlateData(self):
         index = self.combo_box.currentIndex()
 
@@ -619,6 +655,7 @@ class ModulePosition(QtWidgets.QGroupBox):
         self.ax.set_yticks([])
 
         self.updateList()
+        self.updatePositionMarker()
 
     def listKeyPress(self, event):
         if event.key() == QtCore.Qt.Key_Return:
@@ -728,6 +765,7 @@ class ModulePosition(QtWidgets.QGroupBox):
 
     def addPosition(self):
         position = self.mic.getPos()
+        self.updatePositionMarker(position)
         selections = self.list.selectedItems()
         if len(selections) == 0 or self.list.currentRow() == self.list.count() - 1:
             self.positions.append(position)
@@ -982,14 +1020,22 @@ class ModuleExposure(QtWidgets.QGroupBox):
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
         min_exp, max_exp = self.cam.get_exposure_range()
-        self.input_exposure = QInputNumber(self.layout, "Exposure", self.cam.exposure(), min_exp, max_exp, use_slider=True)
-        min_gain, max_gain = self.cam.get_gain_range()
-        if self.cam.gain() is None:
-            self.input_gain = QInputNumber(self.layout, "Gain", self.cam.gain(), min_gain, max_gain, use_slider=True)
+        self.input_exposure = QInputNumber(
+            self.layout, "Exposure", self.cam.exposure(), min_exp, max_exp,
+            use_slider=True, unit="ms",
+            tooltip="Remembered separately for each method and fluorescence filter during this viewer session.",
+        )
+        self.input_gain = None
+        gain = self.cam.gain()
+        if gain is not None and np.isfinite(gain):
+            min_gain, max_gain = self.cam.get_gain_range()
+            self.input_gain = QInputNumber(self.layout, "Gain", gain, min_gain, max_gain, use_slider=True)
             self.input_gain.valueChanged.connect(lambda v: self.valueChanged(v, 1))
         self.input_exposure.valueChanged.connect(lambda v: self.valueChanged(v, 0))
 
         self.parent.signal.connect(self.updateStatus)
+        self.parent.signal_new_image.connect(self.updateStatus)
+        self.parent.signal_properties_changed.connect(self.updateStatus)
         self.updateStatus()
 
     def valueChanged(self, value, i):
@@ -1003,6 +1049,15 @@ class ModuleExposure(QtWidgets.QGroupBox):
 
     def updateStatus(self):
         self.setTitle("Exposure")
+        if not self.input_exposure.slider_dragged:
+            self.input_exposure.setValue(self.cam.exposure())
+            # Readback is the baseline for the next edit, including after a mode switch.
+            self.input_exposure.last_emited_value = self.input_exposure.value()
+        if self.input_gain is not None and not self.input_gain.slider_dragged:
+            gain = self.cam.gain()
+            if gain is not None and np.isfinite(gain):
+                self.input_gain.setValue(gain)
+                self.input_gain.last_emited_value = self.input_gain.value()
 
 
 class ModuleROI(QtWidgets.QGroupBox):
@@ -1235,6 +1290,27 @@ class Window(QtWidgets.QWidget):
         self.mic.getAllProperties()
         self.signal_properties_changed.emit()
 
+    def _exposure_key(self):
+        mode = self.mic.properties["current_mode"]
+        channel = None
+        if mode in (Microscope.MODE_FLUO, Microscope.MODE_FLUO_PH, Microscope.MODE_FLUO_DIC):
+            channel = self.mic.properties["current_filter"]
+        return mode, channel
+
+    def setMode(self, mode, fluo_channel=None):
+        """Restore live-view exposure without changing recording-mode behaviour."""
+        previous_key = self._exposure_key()
+        self._exposure_by_mode[previous_key] = self.cam.exposure()
+        self.mic.setMode(mode, fluo_channel)
+        self.mic.getAllProperties()
+        key = self._exposure_key()
+        try:
+            if key != previous_key and key in self._exposure_by_mode:
+                self.cam.setExposure(self._exposure_by_mode[key])
+            # An unvisited method/filter keeps the current exposure until edited.
+        finally:
+            self.signal_properties_changed.emit()
+
     def sceneEventFilter(self, event):
         if event.type() == QtCore.QEvent.GraphicsSceneMousePress and event.button() == QtCore.Qt.LeftButton:
             self.pan = True
@@ -1271,6 +1347,7 @@ class Window(QtWidgets.QWidget):
             self.mic = None
 
         self.cam = MemmapReader()
+        self._exposure_by_mode = {}
         print("... connected")
 
         self.setWindowTitle('LiveViewer')
@@ -1409,7 +1486,14 @@ if __name__ == '__main__':
     if sys.platform[:3] == 'win':
         myappid = 'fabrybiophysics.liveviewer' # arbitrary string
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-    window = Window()
+    try:
+        window = Window()
+    except Exception as err:
+        import traceback
+        traceback.print_exc()
+        splash.close()
+        QtWidgets.QMessageBox.critical(None, "LiveViewer could not start", str(err))
+        sys.exit(1)
     window.show()
     splash.finish(window)
     sys.exit(app.exec_())
