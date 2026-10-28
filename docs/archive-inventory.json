@@ -1,0 +1,86 @@
+[
+  {
+    "label": "mic3-codex-microscope-software",
+    "files": 715,
+    "source_files": 142,
+    "zip_bytes": 159470835,
+    "sha256": "9bb1a135eb7303f582bd251404c66821fbae3631f44a9836a7a7d3d9cb54ccb1"
+  },
+  {
+    "label": "mic3-deflinator",
+    "files": 146,
+    "source_files": 14,
+    "zip_bytes": 210517,
+    "sha256": "b6828411f783e67f6cc2e7b17af054365f98231585ea072138daa612de69e163"
+  },
+  {
+    "label": "mic3-fast_scan_version",
+    "files": 103,
+    "source_files": 67,
+    "zip_bytes": 1613479,
+    "sha256": "986793b8f93be2202c8972624aeb901de2ca72f9d57cb362d39f20ac98747b3f"
+  },
+  {
+    "label": "mic3-gridviewer",
+    "files": 77,
+    "source_files": 20,
+    "zip_bytes": 318980,
+    "sha256": "37a59cbde48600c4971a511ffd6666c7972d9872650fa10e26a88622f36ed62b"
+  },
+  {
+    "label": "mic3-leica_microscope",
+    "files": 193,
+    "source_files": 70,
+    "zip_bytes": 80671897,
+    "sha256": "516d6da4ea67bf1844f063c63d184d77e26837d9e12f7e99ecf1c9334bedebb5"
+  },
+  {
+    "label": "mic3-leica_microscope_old",
+    "files": 192,
+    "source_files": 70,
+    "zip_bytes": 7767794,
+    "sha256": "3272ff72189086d58f460543665fa7482bcc1dc89df83bf16fd745bb798dc25b"
+  },
+  {
+    "label": "mic3-mic3_before_fast_scan_20261023_113223",
+    "files": 67,
+    "source_files": 65,
+    "zip_bytes": 149692,
+    "sha256": "e4fb6638b6f4c8782d8da0a2b96ebac2f94a252e31439566c34e781cfcc211c3"
+  },
+  {
+    "label": "mic3-mic3_before_position_fix_20261023_121926",
+    "files": 11,
+    "source_files": 11,
+    "zip_bytes": 17972,
+    "sha256": "320975b65f019d6aaa8bdd85000592bba638d1721dc2550e71debcf8999b6cb0"
+  },
+  {
+    "label": "mic3-old",
+    "files": 1677,
+    "source_files": 129,
+    "zip_bytes": 128745114,
+    "sha256": "af0a7ee96c240c5fd6d72b1741a04c0821a48ff0ce87fdbc4817d9d601a7894d"
+  },
+  {
+    "label": "mic2-codex-microscope-software",
+    "source_files": 86,
+    "archive_scope": "source only; full original remains on mic2 and transfer share",
+    "zip_bytes": 384829,
+    "sha256": "05e8de9adf703e1cd55fd7989909d8f8b1e71c15c0970e538d3f1bdf271535b4"
+  },
+  {
+    "label": "mic2-leica_microscope",
+    "source_files": 125,
+    "archive_scope": "source only; full original remains on mic2 and transfer share",
+    "zip_bytes": 687018,
+    "sha256": "3612c152429dee17f3d88c2769e0aa375a23596f9b0e8b12cfcb59adc5f8ddb2"
+  },
+  {
+    "label": "mic2-leica_microscope_old",
+    "source_files": 69,
+    "archive_scope": "source only; full original remains on mic2 and transfer share",
+    "zip_bytes": 315492,
+    "sha256": "3d01a530aaabfc7dd73960b15630d5309e3176e19e3205278b3bab640bf2d4d3"
+  }
+]
