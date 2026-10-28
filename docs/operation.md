@@ -55,3 +55,15 @@ failure, retain the generated script and error output with the experiment data.
 [Original detailed notes](history/README-before-organization.md) preserve the
 pre-migration operating and calibration descriptions. Paths in those notes
 describe the original installations and may predate this folder organization.
+
+## Legacy features retained in the desktop version
+
+The histogram's **Auto-contrast (fluorescence)** checkbox is available alongside
+per-channel exposure memory and gain controls. Auto-contrast affects the display
+only, leaving raw images unchanged. Black frames remain black without division
+by zero. Ordinary single images, Z-stacks, the previous projection mode, grids,
+positions and repetitions remain available. Optimized fast scanning is opt-in.
+
+`SetLimits.bat` applies this branch's configured XY limits. Console, configuration
+editing and the existing reset utility are also retained. Reset remains a
+maintenance operation, with the original process-reset behaviour.

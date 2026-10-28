@@ -15,8 +15,8 @@ Leica microscope acquisition software with a Basler camera. This is the
 3. Follow the [operation guide](docs/operation.md) for recording and projection scans.
 
 Use a separate checkout for each microscope. Each branch carries its own
-configuration, plate coordinates and velocity model. Existing installations
-have been preserved; this repository has not been deployed over them.
+configuration, plate coordinates and velocity model. Previous installations are preserved for rollback. Desktop deployment uses
+`C:\Software\microscope-software-mic3` with its own launchers.
 
 ## Repository guide
 

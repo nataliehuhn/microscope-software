@@ -17,3 +17,14 @@
 
 No acquisition algorithm was merged between microscopes. Installed software,
 desktop shortcuts and microscope hardware were not changed by this migration.
+
+## 2026-10-28 — Desktop feature preservation
+
+- Restored the fluorescence auto-contrast checkbox alongside fast scanning,
+  with raw-pixel preservation and safe black-frame display.
+- Retained the SetLimits utility, now reading limits from the matching config.
+- Added shared fluorescence gain/exposure, group-protocol and streamer fixes to
+  Mic2 without copying Mic3's acquisition algorithm or hardware calibration.
+- Kept normal recording on the existing Config.txt; Mic2's experimental settings
+  remain available through Record_Experimental_Copy.bat.
+- Desktop deployment uses a separate installation and backs up shortcuts first.

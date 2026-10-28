@@ -58,4 +58,5 @@ Select an experiment output folder outside the checkout.
 Validate any changed camera settings or motion with an operator before using
 the checkout for routine experiments. To roll back, close this checkout's
 programs and launch the preserved original installation with its own shortcut.
-No original shortcuts or installed folders were changed by this migration.
+Desktop shortcuts may be repointed during deployment. Their original links and
+settings are backed up before replacement; original installed folders are retained.

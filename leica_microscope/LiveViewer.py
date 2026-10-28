@@ -1119,7 +1119,7 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         layout.addWidget(self)
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
-        self.setMaximumHeight(100)
+        self.setMaximumHeight(130)
 
         self.max_value = max_value
 
@@ -1140,7 +1140,16 @@ class ModuleHistogram(QtWidgets.QGroupBox):
         self.label = QtWidgets.QLabel()
         self.layout.addWidget(self.label)
 
+        self.checkbox_autocontrast = QtWidgets.QCheckBox("Auto-contrast (fluorescence)")
+        self.checkbox_autocontrast.setChecked(self.parent.auto_contrast)
+        self.checkbox_autocontrast.stateChanged.connect(self.toggleAutoContrast)
+        self.layout.addWidget(self.checkbox_autocontrast)
+
         self.parent.signal_new_image.connect(self.updateStatus)
+
+    def toggleAutoContrast(self, state):
+        self.parent.auto_contrast = (state == QtCore.Qt.Checked)
+        self.parent.showImage()
 
     def updateStatus(self):
         max = self.parent.im_max
@@ -1437,16 +1446,24 @@ class Window(QtWidgets.QWidget):
     def showImage(self):
         if self.im.shape[0] != 0:
             max_brightness = np.amax(self.im)
-
-            max_value = (100*max_brightness/self.cam.getMaxValue()-5.1)/(40-5.1)*255
-            if max_value > 255:
-                max_value = 255
-            if max_value < 0:
-                max_value = 0
-            factor = max_value/max_brightness
-            self.pixmap.setPixmap(QtGui.QPixmap(array2qimage(self.im*factor)))
+            if max_brightness <= 0:
+                im_display = np.zeros(self.im.shape, dtype=np.uint8)
+            elif self.auto_contrast:
+                im_f = self.im.astype(np.float64)
+                im_f -= np.percentile(im_f, 0.01)
+                hi = np.percentile(im_f, 99.99)
+                if hi < 1:
+                    hi = float(max_brightness)
+                im_display = np.clip(im_f / hi * 255, 0, 255).astype(np.uint8)
+            else:
+                max_value = (100*max_brightness/self.cam.getMaxValue()-5.1)/(40-5.1)*255
+                max_value = min(255, max(0, max_value))
+                im_display = self.im * (max_value / max_brightness)
+            # Display adjustment never changes the raw image used for recording.
+            self.pixmap.setPixmap(QtGui.QPixmap(array2qimage(im_display)))
 
     last_update_time = 0
+    auto_contrast = False
     def updateview(self, im):
         # update no more than 10 times per second
         if time.time() - self.last_update_time < 0.1:
