@@ -136,6 +136,10 @@ class TimedProjectionGuiTests(unittest.TestCase):
                  repetition_count=1, repetition_time_delta=5.0,
                  wait_before_image=0, modes=None,
                  positions_filename=None):
+        if positions_filename is not None:
+            positions_file = folder / positions_filename
+            np.savetxt(str(positions_file), [[10, 20, 500], [30, 40, 600]], fmt="%d")
+            positions_filename = str(positions_file)
         stack = SimpleNamespace(
             projection=old_projection, projection_mode=projection_mode,
             projection_start_um=-300.0, projection_stop_um=300.0,
@@ -164,8 +168,7 @@ class TimedProjectionGuiTests(unittest.TestCase):
         with patch("leica_microscope.includes.helper_functions.getConfig",
                    return_value=(config, "20260923-000000")), patch(
                 "leica_microscope.includes.helper_functions.modesToDictList",
-                return_value=[{}] if modes is None else modes), patch("os.system", return_value=0), patch(
-                "os.chdir"):
+                return_value=[{}] if modes is None else modes), patch("subprocess.run"):
             runpy.run_module("leica_microscope.generate_record", run_name="__main__")
         return (folder / "20260923-000000_record.py").read_text()
 

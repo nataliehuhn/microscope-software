@@ -11,6 +11,18 @@
 5. For optimized mode enter `projection_start_um`, `projection_stop_um` and
    `projection_time_s`, then use **Save and Start** when ready for acquisition.
 
+For a long recording at one position, click **Single position, 24 h** in Record.
+It uses the current microscope position and keeps your selected mode and Z scan
+settings. Adjust `minimum_duration_hours` in **repetition** for another duration.
+Use one mode and a 1 x 1 grid.
+Set `repetition_time_delta` for the minimum interval between starts. A positive
+duration uses elapsed time rather than `repetition_count`, and the final scan
+can finish shortly after the requested duration. Leave the positions file empty
+to stay at the current position, or select a file with exactly one saved
+position. Set the duration back to `0` to use the traditional repetition count.
+When setting up a 24-hour experiment, check the displayed duration before
+pressing **Save and Start**.
+
 Z offsets are relative to current focus or the focus saved with a position.
 Generated scripts, normal entry points and tests serve different purposes:
 starting a recording or an experiment runner can move the microscope.
@@ -21,6 +33,18 @@ The Record GUI supports opt-in timed continuous projection. The imported
 `recordTimedContinuousProjection` method records minimum/maximum projections
 over requested Z offsets and duration using the Basler camera. Camera exposure,
 stage speed and starting Z are restored by the acquisition code.
+
+Optimized scans accept durations of at least 0.25 seconds. Z travel also needs
+room beyond the requested endpoints for acceleration. Scans check timing within
+3% and estimated exposure coverage of at least 98%, retrying up to three times.
+They save raw minimum/maximum projections and contributing frame-index maps.
+TIFF metadata records scan timing, exposure, coverage and microscope identity.
+Exposure is selected near the frame period; review illumination for that exposure.
+If the preview or a completed projection has more than 1% saturated pixels,
+Record prints a warning and keeps saving images. The warning and saturation
+fraction are also stored in TIFF metadata. Saturated pixels cannot be recovered;
+adjust illumination or gain before starting when quantitative intensities matter.
+The starting Z is restored across repeated scans and on exit.
 
 `Record.bat` uses the existing `Config.txt` settings, preserving the regular
 desktop workflow. `Record_Experimental_Copy.bat` still uses the separate

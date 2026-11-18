@@ -2,17 +2,56 @@ from __future__ import division, print_function
 import os
 import datetime
 import math
+import subprocess
+import sys
 from pathlib import Path
 
+# Pin direct launches and generated experiments to this microscope checkout.
+software_root = Path(__file__).resolve().parent.parent
+if __package__ in (None, ""):
+    sys.path.insert(0, str(software_root))
+
 from leica_microscope.includes.helper_functions import getConfig, modesToDictList, formatDict
+from leica_microscope.recording_sequence import SequenceSettings
 
 config, timestamp = getConfig()
 
 modes = modesToDictList(config.general.record_modes)
+duration_hours = float(config.repetition.minimum_duration_hours) if config.has_option(
+    "repetition", "minimum_duration_hours") else 0.0
+if not math.isfinite(duration_hours) or duration_hours < 0:
+    raise ValueError("Minimum recording duration must be finite and nonnegative")
+duration_mode = duration_hours > 0
+if duration_mode and (len(modes) != 1 or config.grid.countx != 1
+                      or config.grid.county != 1):
+    raise ValueError(
+        "Duration recording needs one mode and a 1 x 1 grid; "
+        "use one current or saved position"
+    )
+sequence_settings = SequenceSettings.from_config(config)
+if (sequence_settings.position_order != "as_saved" or sequence_settings.settle_pattern
+        ) and config.files.positions_filename is None:
+    raise ValueError("Choose a positions file to use a position sequence or settling pattern")
+if duration_mode and sequence_settings.cycle_count != 1:
+    raise ValueError("Duration recording needs exactly one full cycle")
+
+if config.has_option("stack", "projection_mode"):
+    projection_mode = config.stack.projection_mode
+    if projection_mode in ("timed", "legacy"):
+        projection_mode = {"timed": "optimized", "legacy": "default"}[projection_mode]
+        if config.has_option("stack", "projection") and not config.stack.projection:
+            projection_mode = "off"
+else:
+    projection_mode = (
+        "default" if config.has_option("stack", "projection")
+        and config.stack.projection else "off"
+    )
+if projection_mode not in ("off", "default", "optimized"):
+    raise ValueError("Unknown projection mode: {!r}".format(projection_mode))
 
 indent = 0
-output_file = Path(config.files.target_folder) / (timestamp + "_record.py")
-output_file.parent.mkdir(exist_ok=True)
+output_file = Path(config.files.target_folder).resolve() / (timestamp + "_record.py")
+output_file.parent.mkdir(parents=True, exist_ok=True)
 # empty the target file
 with output_file.open("w"):
     pass
@@ -26,22 +65,45 @@ def output(str):
 print("=== generate code ===")
 
 output(f"""
+import sys
+sys.path.insert(0, {str(software_root)!r})
 import numpy as np
 import time
+from pathlib import Path
 from leica_microscope.includes.helper_functions import format_partial, bar
 from leica_microscope.microscope import Microscope
-
-# initialize the microscope connection
-mic = Microscope()
-
-# get the filename where to store the output
-filename = mic.getDefaultFilename(r"{config.files.target_folder}")
+from leica_microscope.recording_sequence import SequenceSettings, load_sequence_positions, position_indices, write_sequence_manifest, recording_cycles, cycle_output_folder, wait_for_position_repeat
+sequence_settings = {sequence_settings!r}
 """)
 
 if config.files.positions_filename != None:
     output("")
     output("# load positions from a file")
-    output(f"positions = mic.loadPositions(r'{config.files.positions_filename}')")
+    output(f"positions = load_sequence_positions({str(config.files.positions_filename)!r})")
+    if duration_mode:
+        output('if len(positions) != 1: raise ValueError("Duration recording needs exactly one saved position")')
+    output("visit_order = position_indices(len(positions), sequence_settings.position_order, sequence_settings.positions_per_condition)")
+    output(f"write_sequence_manifest({str(output_file.with_name(timestamp + '_position_sequence.json'))!r}, positions, sequence_settings)")
+
+output("# initialize only after the position file and sequence have been validated")
+output("mic = Microscope()")
+if config.general.wait_at_start > 0:
+    output(f"time.sleep({config.general.wait_at_start * 60})")
+if duration_mode and config.files.positions_filename is not None:
+    output("mic.setPos(positions[0])")
+
+if sequence_settings.cycle_count > 1:
+    if config.files.positions_filename is None:
+        output("cycle_origin = mic.getPos()")
+    output("for cycle in recording_cycles(sequence_settings.cycle_count, sequence_settings.cycle_interval_hours):")
+    indent += 1
+    if config.files.positions_filename is None:
+        output("mic.setPos(cycle_origin)")
+    output(f"cycle_folder = cycle_output_folder({str(output_file.parent / (timestamp + '_cycles'))!r}, cycle, sequence_settings.cycle_interval_hours)")
+    output("filename = mic.getDefaultFilename(str(cycle_folder))")
+    output("mic.iteration_time = None")
+else:
+    output(f"filename = mic.getDefaultFilename({str(output_file.parent)!r})")
 
 if len(modes) > 1:
     output("")
@@ -51,12 +113,6 @@ elif len(modes) == 1 and len(modes[0]) != 0:
     output("")
     output("# set the mode for recording")
     output(f"mic.setProperties({formatDict(modes[0], escape=True)})")
-
-if config.general.wait_at_start > 0:
-    output("")
-    output("# wait before the measurement")
-    output(f"print('Waiting before the measurement for {config.general.wait_at_start} minutes')")
-    output(f"time.sleep({config.general.wait_at_start*60})")
 
 if config.grid.countx > 1 or config.grid.county > 1:
     output("")
@@ -70,20 +126,28 @@ if config.grid.countx > 1 or config.grid.county > 1:
     """)
 
 properties = {}
+if duration_mode and config.files.positions_filename is not None:
+    properties["pos"] = "0"
+
+def output_position_move():
+    output("pos = positions[pos_index]")
+    if optimized_multisite:
+        output("timed_series.finish_position()")
+    output("mic.setPos(pos)")
+    if sequence_settings.settle_pattern:
+        output("time.sleep(sequence_settings.settle_pattern[visit_index % len(sequence_settings.settle_pattern)])")
 
 # A batch may stay at a scan edge only when nothing else in the generated
 # loops changes position or mode between repetitions.
 optimized_series = (
-    config.has_option("stack", "projection_mode")
-    and config.stack.projection_mode == "optimized"
-    and config.repetition.repetition_count > 1
-    and config.files.positions_filename is None
+    projection_mode == "optimized"
+    and (config.repetition.repetition_count > 1 or duration_mode)
+    and (config.files.positions_filename is None or duration_mode)
     and config.grid.countx == 1 and config.grid.county == 1
     and len(modes) == 1
 )
 optimized_multisite = (
-    config.has_option("stack", "projection_mode")
-    and config.stack.projection_mode == "optimized"
+    projection_mode == "optimized"
     and not optimized_series
     and (config.repetition.repetition_count > 1 or len(modes) > 1)
 )
@@ -93,32 +157,41 @@ if optimized_multisite:
     output("with mic.timed_projection_session() as timed_series:")
     indent += 1
 
-if config.repetition.repeat_positions_separately is True and config.files.positions_filename != None:
+if (not duration_mode and config.repetition.repeat_positions_separately is True
+        and config.files.positions_filename != None):
     output("")
     output("# iterate over positions")
-    output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
+    output("for visit_index, pos_index in enumerate(bar(visit_order, desc='position')):")
     indent += 1
-    if optimized_multisite:
-        output("timed_series.finish_position()")
-    output("mic.setPos(pos)")
+    output_position_move()
+    output("last_repeat_start = None")
     properties["pos"] = "pos_index"
 
-if config.repetition.repetition_count > 1 and not optimized_series:
+if (config.repetition.repetition_count > 1 or duration_mode) and not optimized_series:
     output("")
     output("# iterate over repetitions")
-    output(f"for rep in bar(range({config.repetition.repetition_count}), desc='repetition'):")
+    if duration_mode:
+        output("from leica_microscope.recording_schedule import duration_repetitions")
+        output("for rep in duration_repetitions(mic.waitSinceLast, "
+               f"{duration_hours * 3600!r}, "
+               f"{float(config.repetition.repetition_time_delta)!r}):")
+    else:
+        output(f"for rep in bar(range({config.repetition.repetition_count}), desc='repetition'):")
     indent += 1
-    output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
+    if not duration_mode:
+        if config.repetition.repeat_positions_separately is True and config.files.positions_filename is not None:
+            output(f"last_repeat_start = wait_for_position_repeat(last_repeat_start, {config.repetition.repetition_time_delta})")
+        else:
+            output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
     properties["repetition"] = "rep"
 
-if config.repetition.repeat_positions_separately is not True and config.files.positions_filename != None:
+if (not duration_mode and config.repetition.repeat_positions_separately is not True
+        and config.files.positions_filename != None):
     output("")
     output("# iterate over positions")
-    output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
+    output("for visit_index, pos_index in enumerate(bar(visit_order, desc='position')):")
     indent += 1
-    if optimized_multisite:
-        output("timed_series.finish_position()")
-    output("mic.setPos(pos)")
+    output_position_move()
     properties["pos"] = "pos_index"
 
 if len(modes) > 1:
@@ -152,26 +225,6 @@ if config.grid.countx > 1 or config.grid.county > 1:
     properties["x"] = "grid_x"
     properties["y"] = "grid_y"
 
-if config.has_option("stack", "projection_mode"):
-    projection_mode = config.stack.projection_mode
-    if projection_mode in ("timed", "legacy"):
-        # Compatibility with the short-lived experimental selector.
-        projection_mode = {
-            "timed": "optimized", "legacy": "default"
-        }[projection_mode]
-        if (config.has_option("stack", "projection")
-                and not config.stack.projection):
-            projection_mode = "off"
-else:
-    # Older configs had only a projection checkbox. Keep their behavior.
-    projection_mode = (
-        "default" if config.has_option("stack", "projection")
-        and config.stack.projection else "off"
-    )
-
-if projection_mode not in ("off", "default", "optimized"):
-    raise ValueError("Unknown projection mode: {!r}".format(projection_mode))
-
 output("")
 if config.general.wait_before_image and not optimized_series:
     output("# wait before image")
@@ -191,11 +244,15 @@ if projection_mode == "optimized":
         raise ValueError("Optimized projection time must be at least 0.25 s")
     if optimized_series:
         output("# alternate timed passes without returning to center between repetitions")
+        duration_argument = (
+            f"duration_s={duration_hours * 3600!r}, " if duration_mode else ""
+        )
+        count_argument = "None" if duration_mode else str(config.repetition.repetition_count)
         output(
             f"mic.rec_timed_continuous_projection_series(filename, "
             f"z_start_um={z_start_um}, z_stop_um={z_stop_um}, "
             f"scan_time_s={scan_time_s}, "
-            f"repetition_count={config.repetition.repetition_count}, "
+            f"repetition_count={count_argument}, {duration_argument}"
             f"repetition_time_delta={config.repetition.repetition_time_delta}, "
             f"wait_before_image_s={config.general.wait_before_image})"
         )
@@ -225,11 +282,12 @@ else:
     output("# record an ordinary Z-stack")
     output(f"mic.rec_stack(format_partial(filename, {formatDict(properties)}), n_below={config.stack.slice_start}, n_above={config.stack.slice_stop}, slice_thickness_um={config.stack.slice_thickness})")
 
-# change to the target folder
-os.chdir(output_file.parent)
 # and execute the new script
 start_time = datetime.datetime.now()
 print("=== start measurement ===")
-os.system("python " + output_file.name + " --timestamp=" + timestamp)
+subprocess.run(
+    [sys.executable, str(output_file), "--timestamp=" + timestamp],
+    cwd=str(output_file.parent), check=True,
+)
 print("=== measurement finished ===")
 print(f"duration {datetime.datetime.now()-start_time}")

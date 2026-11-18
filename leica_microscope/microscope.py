@@ -20,6 +20,7 @@ from leica_microscope.camera import Camera
 from leica_microscope.streamer import MemmapWriter
 from leica_microscope.includes.config import getConfig, writeConfigChange
 from leica_microscope.includes.helper_functions import format_partial, format_with_default, formatByteNumber, bar
+from leica_microscope.recording_schedule import duration_repetitions
 from leica_microscope.projection_motion import (
     aligned_camera_host_times,
     desired_velocity_steps_s,
@@ -2028,14 +2029,23 @@ class Microscope:
         """
         if "{z" not in str(filename):
             raise ValueError("Projection filename must contain a {z} field")
+        if not np.isfinite(scan_time_s) or scan_time_s < 0.25:
+            raise ValueError("scan_time_s must be at least 0.25 s")
+        if (not np.isfinite(z_start_um) or not np.isfinite(z_stop_um)
+                or z_start_um == z_stop_um):
+            raise ValueError("Z offsets must be finite and span a nonzero distance")
         if (not np.isfinite(timing_tolerance_fraction)
                 or timing_tolerance_fraction <= 0):
             raise ValueError("timing_tolerance_fraction must be positive")
         if (not np.isfinite(minimum_coverage_fraction)
                 or not 0 < minimum_coverage_fraction <= 1):
             raise ValueError("minimum_coverage_fraction must be within (0, 1]")
-        if int(maximum_attempts) < 1:
-            raise ValueError("maximum_attempts must be positive")
+        if (not np.isfinite(maximum_attempts) or maximum_attempts < 1
+                or int(maximum_attempts) != maximum_attempts):
+            raise ValueError("maximum_attempts must be a positive integer")
+
+        if center_z_steps is None:
+            center_z_steps = self.getZPos()
 
         original_shutter = self.send_command_and_wait("77033", [int, int])[-1]
         attempts = []
@@ -2073,9 +2083,18 @@ class Microscope:
                     "camera light path and illumination"
                 )
             if preflight["saturated_fraction"] > 0.01:
-                raise RuntimeError(
-                    "Timed projection exposure saturates over 1% of pixels; "
-                    "reduce illumination before recording"
+                print(
+                    "WARNING: Optimized Z scan preview has {:.1%} saturated "
+                    "pixels; recording will continue.".format(
+                        preflight["saturated_fraction"]
+                    ), flush=True
+                )
+                warnings.warn(
+                    "Optimized Z scan preview has {:.1%} saturated pixels. "
+                    "Reduce illumination or gain for better quantitative data; "
+                    "recording will continue.".format(
+                        preflight["saturated_fraction"]
+                    ), RuntimeWarning
                 )
             preflight_elapsed = time.perf_counter() - preflight_started
             acquisition_started = time.perf_counter()
@@ -2124,6 +2143,26 @@ class Microscope:
                     )
                 else:
                     speed_override = diagnostics["selected_speed"]
+            # The preview can be cached across a long one-position series.
+            # Inspect the completed pass too, so changing sample brightness is
+            # reported without aborting acquisition or changing illumination.
+            saturated_fraction = float(np.mean(
+                maximum == self.cam.getMaxValue()
+            ))
+            diagnostics["saturated_projection_fraction"] = saturated_fraction
+            if saturated_fraction > 0.01:
+                print(
+                    "WARNING: Optimized Z scan has {:.1%} saturated "
+                    "projection pixels; images were saved and recording "
+                    "will continue.".format(saturated_fraction), flush=True
+                )
+                warnings.warn(
+                    "Optimized Z scan has {:.1%} saturated projection pixels. "
+                    "Images are saved and recording will continue; consider "
+                    "reducing illumination or gain.".format(
+                        saturated_fraction
+                    ), RuntimeWarning
+                )
         finally:
             self.setShutter(original_shutter)
 
@@ -2143,6 +2182,9 @@ class Microscope:
             "SelectedFrameCount": diagnostics["selected_frame_count"],
             "ProjectionAttempts": json.dumps(attempts, sort_keys=True),
             "ProjectionPreflight": json.dumps(preflight, sort_keys=True),
+            "SaturatedProjectionFraction": diagnostics[
+                "saturated_projection_fraction"
+            ],
             "TimedContinuousProjection": json.dumps(
                 diagnostics, sort_keys=True
             ),
@@ -2210,27 +2252,38 @@ class Microscope:
             self, filename: str, z_start_um: float, z_stop_um: float,
             scan_time_s: float, repetition_count: int,
             repetition_time_delta: float = 0.0,
-            wait_before_image_s: float = 0.0):
+            wait_before_image_s: float = 0.0,
+            duration_s: float = 0.0):
         """Record one-position repetitions, alternating direction at each edge.
 
         The origin is held fixed for all passes and restored at maximum Z speed
         on success or failure. One previous pass may be written in a background
         thread while the next is acquired; hardware access stays on this thread.
         """
-        if int(repetition_count) != repetition_count or repetition_count < 1:
+        if duration_s:
+            if not np.isfinite(duration_s) or duration_s <= 0:
+                raise ValueError("duration_s must be positive and finite")
+        elif repetition_count is None or int(repetition_count) != repetition_count or repetition_count < 1:
             raise ValueError("repetition_count must be a positive integer")
         if (not np.isfinite(repetition_time_delta)
                 or repetition_time_delta < 0):
             raise ValueError("repetition_time_delta must be nonnegative")
         if not np.isfinite(wait_before_image_s) or wait_before_image_s < 0:
             raise ValueError("wait_before_image_s must be nonnegative")
-        if repetition_count > 1 and "{repetition" not in str(filename):
+        if (duration_s or repetition_count > 1) and "{repetition" not in str(filename):
             raise ValueError("Series filename must contain {repetition}")
 
         results = []
         with self.timed_projection_session() as session:
-            for rep in bar(range(int(repetition_count)), desc="repetition"):
-                self.waitSinceLast(repetition_time_delta)
+            if duration_s:
+                repetitions = duration_repetitions(
+                    self.waitSinceLast, duration_s, repetition_time_delta
+                )
+            else:
+                repetitions = bar(range(int(repetition_count)), desc="repetition")
+            for rep in repetitions:
+                if not duration_s:
+                    self.waitSinceLast(repetition_time_delta)
                 if wait_before_image_s:
                     time.sleep(wait_before_image_s)
                 result = session.record(

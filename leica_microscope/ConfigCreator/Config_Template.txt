@@ -50,9 +50,27 @@ projection_time_s = 4.0 #min:0.25, unit:s, desc:"Optimized only: requested time 
       Between each repetition a minimum of 'repetition_time_delta' seconds must pass.
       If the recording takes more time, 'repetition_time_delta' can be exceeded.
 
+minimum_duration_hours = 0.0 #min:0, max:10000, unit:h, desc:"One position and one mode only: record for at least this many hours. Set above zero to use elapsed time instead of repetition_count. Leave positions_filename empty to use the current position, or select a file containing exactly one saved position. The last scan can finish after the requested time."
+
 repetition_count = 1  #min:1
 repetition_time_delta = 0.0  #unit:s
 repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."
+
+[position_sequence]
+@desc=Store every condition/well as a consecutive block in the positions file.
+      Alternate conditions visits position 1 in every condition, then position 2, etc.
+
+position_order = "as_saved" #type:choice, values:"as_saved|interleaved", labels:"As saved|Alternate conditions", label:"Position order"
+positions_per_condition = 5 #min:1, label:"Positions per condition", desc:"Every condition must have this many consecutive saved positions. With 5 positions per condition, file rows are visited 1,6,11,... then 2,7,12,..."
+settle_pattern_s = "" #label:"Settling pattern (seconds)", desc:"Optional comma-separated waits after moving to each saved position. Repeats over visits and restarts each cycle. Example from the assay: 5,5,0.5,0.5. Blank means no additional wait."
+
+[cycles]
+@desc=A cycle is the complete position route, including all repetitions at each stop.
+      The interval is measured from the start of one full cycle to the next.
+      If a cycle takes longer, the next starts immediately; no cycles overlap.
+
+cycle_count = 1 #min:1, label:"Number of full cycles", desc:"1 runs the complete route once. The migration assay preset starts with 5 cycles; adjust for the desired experiment duration."
+cycle_interval_hours = 3.0 #min:0, unit:h, label:"Repeat full cycle every", desc:"Start-to-start interval in hours, including recording time. For 5 cycles every 3 hours: starts at 0,3,6,9,12 h."
 
 #[calls]
 #call_before_repetition = ""
