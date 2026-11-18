@@ -334,6 +334,7 @@ def getConfig():
 
     # Check if path exists
     target_folder = CheckPath(config.files.target_folder)
+    config.set("files", "target_folder", str(target_folder))
 
     # Copy config to path
     target_filename = None

@@ -21,12 +21,22 @@ PACKAGE = ROOT / "leica_microscope"
 microscope_module = importlib.import_module("leica_microscope.microscope")
 
 
-def generate(tmp_path, stack=None, positions=False, modes=False, grid=False, repetitions=1):
+def generate(tmp_path, stack=None, positions=False, modes=False, grid=False, repetitions=1,
+             sequence=None, cycles=None, separate=False, positions_data=None):
     config = helper_functions.Config(str(PACKAGE / "ConfigCreator/Config_Default.txt"))
     target = tmp_path / "images with spaces"
+    if positions:
+        np.savetxt(str(tmp_path / "positions.txt"),
+                   [[10, 20, 500], [30, 40, 600]] if positions_data is None else positions_data,
+                   fmt="%d")
     config.set("files", "target_folder", str(target))
     config.set("files", "positions_filename", str(tmp_path / "positions.txt") if positions else "None")
     config.set("repetition", "repetition_count", str(repetitions))
+    config.set("repetition", "repeat_positions_separately", str(separate))
+    config.set("repetition", "repetition_time_delta", "15" if separate else "0")
+    for section, values in (("position_sequence", sequence), ("cycles", cycles)):
+        for key, value in (values or {}).items():
+            config.set(section, key, str(value))
     if modes:
         config.set("general", "record_modes", "[Mode_BF(3, 0), Mode_Fluo1(20, 2.5)]")
     if grid:
@@ -195,3 +205,86 @@ def test_standalone_stack_template_still_loads(editor_environment):
         assert editor.config.has_option("stack", "projection")
     finally:
         editor.close()
+
+
+def test_assay_preset_is_editable_and_preserves_sample_settings(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    positions = tmp_path / "positions.txt"
+    np.savetxt(str(positions), np.arange(30).reshape(10, 3), fmt="%d")
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["files"]["positions_filename"].setText(str(positions))
+        editor.fields["stack"]["projection_start_um"].setValue(0)
+        editor.fields["stack"]["projection_stop_um"].setValue(70)
+        editor.fields["stack"]["projection_time_s"].setValue(2.0)
+        editor.button_assay_preset.click()
+        settings, rows = editor.sequencePreviewData()
+        assert settings.positions_per_condition == 5
+        assert settings.cycle_interval_hours == 3
+        assert settings.cycle_count == 5
+        assert [row["saved_position"] for row in rows] == [1, 6, 2, 7, 3, 8, 4, 9, 5, 10]
+        assert editor.fields["stack"]["projection_stop_um"].value() == 70
+        assert editor.fields["stack"]["projection_time_s"].value() == 2
+        assert editor.fields["stack"]["projection_mode"].currentData() == "optimized"
+        assert editor.fields["repetition"]["repetition_count"].value() == 22
+        assert editor.fields["repetition"]["repeat_positions_separately"].isChecked()
+        editor.fields["position_sequence"]["positions_per_condition"].setValue(2)
+        editor.fields["cycles"]["cycle_interval_hours"].setValue(1.5)
+        with Path(options.config).open("w") as handle:
+            editor.config.write(handle)
+        editor.LoadConfig(options.config)
+        settings, rows = editor.sequencePreviewData()
+        assert settings.positions_per_condition == 2
+        assert settings.cycle_interval_hours == 1.5
+    finally:
+        editor.close()
+
+
+def test_full_assay_runs_all_repeats_then_jumps_and_restarts_route_after_three_hours(tmp_path):
+    from leica_microscope import recording_sequence
+    positions = np.array([[10 * i, 20 * i, 10000 + i] for i in range(10)])
+    code = generate(
+        tmp_path, positions=True, positions_data=positions, repetitions=22, separate=True,
+        sequence=dict(position_order="interleaved", positions_per_condition=5,
+                      settle_pattern_s="5,5,0.5,0.5"),
+        cycles=dict(cycle_count=2, cycle_interval_hours=3),
+    )
+    clock = SimpleNamespace(now=0.0)
+    starts = []
+
+    class TimedPlan(PlanMicroscope):
+        def rec_timed_continuous_projection(self, *args, **kwargs):
+            starts.append(clock.now)
+            result = super().rec_timed_continuous_projection(*args, **kwargs)
+            clock.now += 1.0
+            return result
+
+    mic = TimedPlan()
+    with patch.object(microscope_module, "Microscope", return_value=mic), \
+            patch.object(recording_sequence.time, "monotonic", lambda: clock.now), \
+            patch.object(recording_sequence.time, "sleep", lambda delay: setattr(clock, "now", clock.now + delay)), \
+            contextlib.redirect_stdout(io.StringIO()):
+        exec(compile(code, "assay_record.py", "exec"), {})
+    assert len(mic.records) == 440
+    order = [0, 5, 1, 6, 2, 7, 3, 8, 4, 9]
+    for cycle in range(2):
+        records = mic.records[cycle * 220:(cycle + 1) * 220]
+        assert [record[1] for record in records[::22]] == [10000 + index for index in order]
+        assert [int(Path(record[0]).name.split("_")[0]) for record in records[::22]] == order
+        assert [int(Path(record[0]).name.split("_")[1]) for record in records[:22]] == list(range(22))
+        np.testing.assert_allclose(np.diff(starts[cycle * 220:cycle * 220 + 22]), 15)
+    assert starts[0] == 5
+    assert starts[220] == 10800 + 5
+    assert len({record[0] for record in mic.records}) == 440
+    assert mic.getZPos() == mic.origin
+    manifest = __import__("json").loads((tmp_path / "images with spaces/test_position_sequence.json").read_text())
+    assert [row["saved_position"] for row in manifest["visits"]] == [index + 1 for index in order]
+
+
+def test_invalid_condition_grouping_fails_before_connecting_to_microscope(tmp_path):
+    code = generate(tmp_path, positions=True,
+                    sequence=dict(position_order="interleaved", positions_per_condition=5))
+    with patch.object(microscope_module, "Microscope") as connect, \
+            pytest.raises(ValueError, match="cannot be split"):
+        exec(compile(code, "invalid_assay.py", "exec"), {})
+    connect.assert_not_called()

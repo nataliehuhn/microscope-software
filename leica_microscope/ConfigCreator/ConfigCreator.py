@@ -327,8 +327,12 @@ class ConfigEditor(QtWidgets.QWidget):
         layout_content = QtWidgets.QHBoxLayout()
         layout_vert.addLayout(layout_content)
 
-        layout_gui = QtWidgets.QVBoxLayout()
-        layout_content.addLayout(layout_gui)
+        self.form_scroll = QtWidgets.QScrollArea()
+        self.form_scroll.setWidgetResizable(True)
+        form = QtWidgets.QWidget()
+        layout_gui = QtWidgets.QVBoxLayout(form)
+        self.form_scroll.setWidget(form)
+        layout_content.addWidget(self.form_scroll, 1)
 
         layout_vert = layout_gui
         self.config_default = Config(options.template)
@@ -353,11 +357,11 @@ class ConfigEditor(QtWidgets.QWidget):
                 name, value = item
                 value, meta = getMeta(value)
                 self.meta[section][name] = meta
-                label = QtWidgets.QLabel(name)
+                label = QtWidgets.QLabel(meta.get("label", name))
                 box_layout.addWidget(label, index, 0)
                 if meta["type"] == "int":
                     edit_field = QtWidgets.QSpinBox()
-                    edit_field.setRange(-1e4, 1e4)
+                    edit_field.setRange(-10000, 10000)
                     edit_field.setValue(value)
                     edit_field.valueChanged.connect(lambda value, section=section, name=name: self.changed(section, name, value))
                     if "min" in meta:
@@ -437,6 +441,18 @@ class ConfigEditor(QtWidgets.QWidget):
                 box.resizeEvent = lambda event, button2=button2, box=box: button2.move(box.width()-button2.width(), 0)
                 button2.setToolTip(tooltip)
 
+        if "position_sequence" in self.fields:
+            self.button_assay_preset = QtWidgets.QPushButton("Migration assay preset")
+            self.button_assay_preset.setToolTip(
+                "5 positions per condition; 22 optimized projections at 15 s; "
+                "5 full cycles every 3 h. Keeps your files, modes, and Z scan settings."
+            )
+            self.button_assay_preset.clicked.connect(self.applyAssayPreset)
+            layout_hor.addWidget(self.button_assay_preset)
+            self.button_preview_sequence = QtWidgets.QPushButton("Preview route")
+            self.button_preview_sequence.clicked.connect(self.previewSequence)
+            layout_hor.addWidget(self.button_preview_sequence)
+
         if qsci_loaded:
             self.Scintilla = Qsci.QsciScintilla()
             self.Scintilla.setLexer(Qsci.QsciLexerPython(self))
@@ -460,12 +476,18 @@ class ConfigEditor(QtWidgets.QWidget):
                 self.updateStackFields
             )
         self.updateStackFields()
+        if "position_order" in self.fields.get("position_sequence", {}):
+            self.fields["position_sequence"]["position_order"].currentIndexChanged.connect(
+                self.updateSequenceFields
+            )
+        self.updateSequenceFields()
         self.move(0, 0)
         
         # center window in desktop
         DRect = QtWidgets.QDesktopWidget().screenGeometry()
+        self.resize(min(1150, DRect.width() - 80), min(850, DRect.height() - 80))
         WRect = self.geometry()
-        self.move((DRect.width()-WRect.width())/2, (DRect.height()-WRect.height())/4)
+        self.move((DRect.width()-WRect.width())//2, (DRect.height()-WRect.height())//4)
 
     def LoadConfig(self, path, editor_update=True):
         in_group = False
@@ -547,6 +569,90 @@ class ConfigEditor(QtWidgets.QWidget):
             self.no_update = False
         if "stack" in self.fields:
             self.updateStackFields()
+        self.updateSequenceFields()
+
+    def updateSequenceFields(self, *_):
+        fields = self.fields.get("position_sequence", {})
+        if "position_order" in fields:
+            fields["positions_per_condition"].setEnabled(
+                fields["position_order"].currentData() == "interleaved"
+            )
+
+    def applyAssayPreset(self):
+        """Apply assay scheduling while retaining the user's sample settings."""
+        settings = {
+            ("stack", "projection_mode"): "optimized",
+            ("position_sequence", "position_order"): "interleaved",
+            ("position_sequence", "positions_per_condition"): 5,
+            ("position_sequence", "settle_pattern_s"): "5,5,0.5,0.5",
+            ("repetition", "repetition_count"): 22,
+            ("repetition", "repetition_time_delta"): 15.0,
+            ("repetition", "repeat_positions_separately"): True,
+            ("cycles", "cycle_count"): 5,
+            ("cycles", "cycle_interval_hours"): 3.0,
+            ("grid", "countx"): 1,
+            ("grid", "county"): 1,
+            ("general", "wait_before_image"): 0.0,
+        }
+        for (section, name), value in settings.items():
+            field = self.fields[section][name]
+            if isinstance(field, QtWidgets.QComboBox):
+                field.setCurrentIndex(field.findData(value))
+            elif isinstance(field, QtWidgets.QCheckBox):
+                field.setChecked(value)
+            elif isinstance(field, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox)):
+                field.setValue(value)
+            else:
+                field.setText(value)
+        self.updateStackFields()
+        self.updateSequenceFields()
+
+    def sequencePreviewData(self):
+        from leica_microscope.recording_sequence import (
+            SequenceSettings, load_sequence_positions, sequence_rows,
+        )
+        settings = SequenceSettings.from_config(self.config)
+        filename, _ = getMeta(self.config.get("files", "positions_filename"))
+        if not filename or filename == "None":
+            if settings.position_order != "as_saved" or settings.settle_pattern:
+                raise ValueError("Choose a positions file for the condition/position sequence")
+            return settings, []
+        positions = load_sequence_positions(filename)
+        return settings, sequence_rows(positions, settings)
+
+    def previewSequence(self):
+        try:
+            settings, rows = self.sequencePreviewData()
+        except (OSError, ValueError) as error:
+            QtWidgets.QMessageBox.warning(self, "Check recording sequence", str(error))
+            return
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Recording route preview")
+        layout = QtWidgets.QVBoxLayout(dialog)
+        summary = QtWidgets.QLabel(
+            "{} full cycle(s), every {:g} h from the previous cycle start.\n"
+            "{} saved position(s). Each cycle runs the complete route and its repetitions.\n"
+            "File rows and conditions below are numbered from 1; TIFF pos indices start at 0."
+            .format(settings.cycle_count, settings.cycle_interval_hours, len(rows))
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        table = QtWidgets.QTableWidget(len(rows), 7)
+        table.setHorizontalHeaderLabels(["Visit", "Condition", "Pos in condition", "File row", "X", "Y / Z", "Settle (s)"])
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        for index, row in enumerate(rows):
+            x, y, z = row["xyz_steps"]
+            values = [row["visit"], row["condition"], row["position_in_condition"],
+                      row["saved_position"], x, "{} / {}".format(y, z), row["settle_seconds"]]
+            for column, value in enumerate(values):
+                table.setItem(index, column, QtWidgets.QTableWidgetItem("-" if value is None else str(value)))
+        table.resizeColumnsToContents()
+        layout.addWidget(table)
+        close = QtWidgets.QPushButton("Close")
+        close.clicked.connect(dialog.accept)
+        layout.addWidget(close)
+        dialog.resize(850, 550)
+        dialog.exec_()
 
     def updateStackFields(self, *_):
         """Show only the controls used by the selected stack/projection mode."""
@@ -583,6 +689,12 @@ class ConfigEditor(QtWidgets.QWidget):
     def ButtonSave(self):
         print("saving config")
         if self.options.program:
+            if "position_sequence" in self.fields:
+                try:
+                    self.sequencePreviewData()
+                except (OSError, ValueError) as error:
+                    QtWidgets.QMessageBox.warning(self, "Check recording sequence", str(error))
+                    return
             with open(self.options.config, "w") as fp:
                 self.config.write(fp)
             self.close()

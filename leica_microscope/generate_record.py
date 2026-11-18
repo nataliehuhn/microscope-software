@@ -12,10 +12,15 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(software_root))
 
 from leica_microscope.includes.helper_functions import getConfig, modesToDictList, formatDict
+from leica_microscope.recording_sequence import SequenceSettings
 
 config, timestamp = getConfig()
 
 modes = modesToDictList(config.general.record_modes)
+sequence_settings = SequenceSettings.from_config(config)
+if (sequence_settings.position_order != "as_saved" or sequence_settings.settle_pattern
+        ) and config.files.positions_filename is None:
+    raise ValueError("Choose a positions file to use a position sequence or settling pattern")
 
 if config.has_option("stack", "projection_mode"):
     projection_mode = config.stack.projection_mode
@@ -51,20 +56,37 @@ import sys
 sys.path.insert(0, {str(software_root)!r})
 import numpy as np
 import time
+from pathlib import Path
 from leica_microscope.includes.helper_functions import format_partial, bar
 from leica_microscope.microscope import Microscope
-
-# initialize the microscope connection
-mic = Microscope()
-
-# get the filename where to store the output
-filename = mic.getDefaultFilename(r"{config.files.target_folder}")
+from leica_microscope.recording_sequence import SequenceSettings, load_sequence_positions, position_indices, write_sequence_manifest, recording_cycles, cycle_output_folder, wait_for_position_repeat
+sequence_settings = {sequence_settings!r}
 """)
 
 if config.files.positions_filename != None:
     output("")
     output("# load positions from a file")
-    output(f"positions = mic.loadPositions(r'{config.files.positions_filename}')")
+    output(f"positions = load_sequence_positions({str(config.files.positions_filename)!r})")
+    output("visit_order = position_indices(len(positions), sequence_settings.position_order, sequence_settings.positions_per_condition)")
+    output(f"write_sequence_manifest({str(output_file.with_name(timestamp + '_position_sequence.json'))!r}, positions, sequence_settings)")
+
+output("# initialize only after the position file and sequence have been validated")
+output("mic = Microscope()")
+if config.general.wait_at_start > 0:
+    output(f"time.sleep({config.general.wait_at_start * 60})")
+
+if sequence_settings.cycle_count > 1:
+    if config.files.positions_filename is None:
+        output("cycle_origin = mic.getPos()")
+    output("for cycle in recording_cycles(sequence_settings.cycle_count, sequence_settings.cycle_interval_hours):")
+    indent += 1
+    if config.files.positions_filename is None:
+        output("mic.setPos(cycle_origin)")
+    output(f"cycle_folder = cycle_output_folder({str(output_file.parent / (timestamp + '_cycles'))!r}, cycle, sequence_settings.cycle_interval_hours)")
+    output("filename = mic.getDefaultFilename(str(cycle_folder))")
+    output("mic.iteration_time = None")
+else:
+    output(f"filename = mic.getDefaultFilename({str(output_file.parent)!r})")
 
 if len(modes) > 1:
     output("")
@@ -74,12 +96,6 @@ elif len(modes) == 1 and len(modes[0]) != 0:
     output("")
     output("# set the mode for recording")
     output(f"mic.setProperties({formatDict(modes[0], escape=True)})")
-
-if config.general.wait_at_start > 0:
-    output("")
-    output("# wait before the measurement")
-    output(f"print('Waiting before the measurement for {config.general.wait_at_start} minutes')")
-    output(f"time.sleep({config.general.wait_at_start*60})")
 
 if config.grid.countx > 1 or config.grid.county > 1:
     output("")
@@ -93,6 +109,14 @@ if config.grid.countx > 1 or config.grid.county > 1:
     """)
 
 properties = {}
+
+def output_position_move():
+    output("pos = positions[pos_index]")
+    if optimized_multisite:
+        output("timed_series.finish_position()")
+    output("mic.setPos(pos)")
+    if sequence_settings.settle_pattern:
+        output("time.sleep(sequence_settings.settle_pattern[visit_index % len(sequence_settings.settle_pattern)])")
 
 # A batch may stay at a scan edge only when nothing else in the generated
 # loops changes position or mode between repetitions.
@@ -117,11 +141,10 @@ if optimized_multisite:
 if config.repetition.repeat_positions_separately is True and config.files.positions_filename != None:
     output("")
     output("# iterate over positions")
-    output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
+    output("for visit_index, pos_index in enumerate(bar(visit_order, desc='position')):")
     indent += 1
-    if optimized_multisite:
-        output("timed_series.finish_position()")
-    output("mic.setPos(pos)")
+    output_position_move()
+    output("last_repeat_start = None")
     properties["pos"] = "pos_index"
 
 if config.repetition.repetition_count > 1 and not optimized_series:
@@ -129,17 +152,18 @@ if config.repetition.repetition_count > 1 and not optimized_series:
     output("# iterate over repetitions")
     output(f"for rep in bar(range({config.repetition.repetition_count}), desc='repetition'):")
     indent += 1
-    output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
+    if config.repetition.repeat_positions_separately is True and config.files.positions_filename is not None:
+        output(f"last_repeat_start = wait_for_position_repeat(last_repeat_start, {config.repetition.repetition_time_delta})")
+    else:
+        output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
     properties["repetition"] = "rep"
 
 if config.repetition.repeat_positions_separately is not True and config.files.positions_filename != None:
     output("")
     output("# iterate over positions")
-    output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
+    output("for visit_index, pos_index in enumerate(bar(visit_order, desc='position')):")
     indent += 1
-    if optimized_multisite:
-        output("timed_series.finish_position()")
-    output("mic.setPos(pos)")
+    output_position_move()
     properties["pos"] = "pos_index"
 
 if len(modes) > 1:

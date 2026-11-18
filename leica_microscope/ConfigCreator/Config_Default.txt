@@ -34,6 +34,15 @@ repetition_count = 1
 repetition_time_delta = 0
 repeat_positions_separately = False
 
+[position_sequence]
+position_order = "as_saved"
+positions_per_condition = 5
+settle_pattern_s = ""
+
+[cycles]
+cycle_count = 1
+cycle_interval_hours = 3.0
+
 [calls]
 call_before_repetition = ""
 call_between_repetition = ""
