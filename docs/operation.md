@@ -11,17 +11,26 @@
 5. For optimized mode enter `projection_start_um`, `projection_stop_um` and
    `projection_time_s`, then use **Save and Start** when ready for acquisition.
 
-For a long recording at one position, click **Single position, 24 h** in Record.
-It uses the current microscope position and keeps your selected mode and Z scan
-settings. Adjust `minimum_duration_hours` in **repetition** for another duration.
-Use one mode and a 1 x 1 grid.
+At the top of Record, choose a **Recording plan**:
+
+- **Timed: current position (24 h)** clears the positions file and starts at the
+  current stage position. Change `minimum_duration_hours` for another duration.
+- **Timed: one saved position** uses a positions file containing exactly one row.
+- **Repetitions: saved positions** uses the saved route and `repetition_count`.
+  This exits timed mode by setting `minimum_duration_hours` to `0`.
+- **Repetitions: current position** uses `repetition_count` without a positions file.
+
+The status line below the buttons shows the current plan. These buttons keep the
+selected imaging mode and Z scan settings. Review the duration or repetition
+count, interval, positions file and target folder before starting.
+
+For timed recording, use one mode and a 1 x 1 grid.
 Set `repetition_time_delta` for the minimum interval between starts. A positive
 duration uses elapsed time rather than `repetition_count`, and the final scan
 can finish shortly after the requested duration. Leave the positions file empty
 to stay at the current position, or select a file with exactly one saved
-position. Set the duration back to `0` to use the traditional repetition count.
-When setting up a 24-hour experiment, check the displayed duration before
-pressing **Save and Start**.
+position. When setting up a 24-hour experiment, check the displayed duration
+before pressing **Save and Start**.
 
 Z offsets are relative to current focus or the focus saved with a position.
 Generated scripts, normal entry points and tests serve different purposes:

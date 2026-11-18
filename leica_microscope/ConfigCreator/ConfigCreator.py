@@ -324,6 +324,29 @@ class ConfigEditor(QtWidgets.QWidget):
         self.button_save.clicked.connect(self.ButtonSave)
         layout_hor.addWidget(self.button_save)
 
+        if "position_sequence" in Config(options.template).sections():
+            plan_box = QtWidgets.QGroupBox("Recording plan — choose one")
+            plan_layout = QtWidgets.QVBoxLayout(plan_box)
+            plan_buttons = QtWidgets.QHBoxLayout()
+            self.button_single_position_preset = QtWidgets.QPushButton(
+                "Timed: current position (24 h)"
+            )
+            self.button_single_position_preset.clicked.connect(self.applySinglePositionPreset)
+            plan_buttons.addWidget(self.button_single_position_preset)
+            self.button_timed_saved = QtWidgets.QPushButton("Timed: one saved position")
+            self.button_timed_saved.clicked.connect(self.applyTimedSavedPosition)
+            plan_buttons.addWidget(self.button_timed_saved)
+            self.button_repeated_saved = QtWidgets.QPushButton("Repetitions: saved positions")
+            self.button_repeated_saved.clicked.connect(self.applyRepeatedSavedPositions)
+            plan_buttons.addWidget(self.button_repeated_saved)
+            self.button_repeated_current = QtWidgets.QPushButton("Repetitions: current position")
+            self.button_repeated_current.clicked.connect(self.applyRepeatedCurrentPosition)
+            plan_buttons.addWidget(self.button_repeated_current)
+            plan_layout.addLayout(plan_buttons)
+            self.plan_status = QtWidgets.QLabel()
+            plan_layout.addWidget(self.plan_status)
+            layout_vert.addWidget(plan_box)
+
         layout_content = QtWidgets.QHBoxLayout()
         layout_vert.addLayout(layout_content)
 
@@ -442,14 +465,11 @@ class ConfigEditor(QtWidgets.QWidget):
                 button2.setToolTip(tooltip)
 
         if "position_sequence" in self.fields:
-            self.button_single_position_preset = QtWidgets.QPushButton("Single position, 24 h")
             self.button_single_position_preset.setToolTip(
                 "Use the current microscope position for at least 24 hours. "
                 "Keeps the selected mode and Z scan settings; adjust the duration and interval below. "
                 "To use a saved position, select a file containing exactly one position afterward."
             )
-            self.button_single_position_preset.clicked.connect(self.applySinglePositionPreset)
-            layout_hor.addWidget(self.button_single_position_preset)
             self.button_assay_preset = QtWidgets.QPushButton("Migration assay preset")
             self.button_assay_preset.setToolTip(
                 "5 positions per condition; 22 optimized projections at 15 s; "
@@ -489,6 +509,7 @@ class ConfigEditor(QtWidgets.QWidget):
                 self.updateSequenceFields
             )
         self.updateSequenceFields()
+        self.updatePlanStatus()
         self.move(0, 0)
         
         # center window in desktop
@@ -578,6 +599,7 @@ class ConfigEditor(QtWidgets.QWidget):
         if "stack" in self.fields:
             self.updateStackFields()
         self.updateSequenceFields()
+        self.updatePlanStatus()
 
     def updateSequenceFields(self, *_):
         fields = self.fields.get("position_sequence", {})
@@ -641,6 +663,76 @@ class ConfigEditor(QtWidgets.QWidget):
             else:
                 field.setText(value)
         self.updateSequenceFields()
+        self.updatePlanStatus()
+
+    def applyTimedSavedPosition(self):
+        """Use elapsed time with exactly one position from a saved file."""
+        if not self.ensureSavedPositionsFile():
+            return
+        duration = self.fields["repetition"]["minimum_duration_hours"].value()
+        self.fields["repetition"]["minimum_duration_hours"].setValue(
+            duration if duration > 0 else 24.0
+        )
+        self.fields["repetition"]["repeat_positions_separately"].setChecked(False)
+        self.fields["position_sequence"]["position_order"].setCurrentIndex(
+            self.fields["position_sequence"]["position_order"].findData("as_saved")
+        )
+        self.fields["position_sequence"]["settle_pattern_s"].setText("")
+        self.fields["cycles"]["cycle_count"].setValue(1)
+        self.fields["grid"]["countx"].setValue(1)
+        self.fields["grid"]["county"].setValue(1)
+        self.updatePlanStatus()
+
+    def applyRepeatedSavedPositions(self):
+        """Use the repetition count with a saved positions file."""
+        if not self.ensureSavedPositionsFile():
+            return
+        self.fields["repetition"]["minimum_duration_hours"].setValue(0)
+        self.updatePlanStatus()
+
+    def ensureSavedPositionsFile(self):
+        filename, _ = getMeta(self.config.get("files", "positions_filename"))
+        if filename and filename != "None":
+            return True
+        path = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Choose saved positions file"
+        )
+        path = path[0] if isinstance(path, tuple) else path
+        if not path:
+            return False
+        self.fields["files"]["positions_filename"].setText(str(path))
+        return True
+
+    def applyRepeatedCurrentPosition(self):
+        """Use the repetition count at the current stage position."""
+        self.fields["repetition"]["minimum_duration_hours"].setValue(0)
+        self.fields["files"]["positions_filename"].setText("None")
+        self.fields["position_sequence"]["position_order"].setCurrentIndex(
+            self.fields["position_sequence"]["position_order"].findData("as_saved")
+        )
+        self.fields["position_sequence"]["settle_pattern_s"].setText("")
+        self.updatePlanStatus()
+
+    def updatePlanStatus(self):
+        if not hasattr(self, "plan_status") or not hasattr(self, "config"):
+            return
+        try:
+            duration = float(self.config.get("repetition", "minimum_duration_hours"))
+            filename, _ = getMeta(self.config.get("files", "positions_filename"))
+        except (ConfigParser.NoOptionError, ConfigParser.NoSectionError, ValueError):
+            return
+        saved = bool(filename and filename != "None")
+        if duration > 0:
+            plan = "Timed for {:g} h at {}".format(
+                duration, "one saved position" if saved else "the current position"
+            )
+            if saved:
+                plan += " (file must contain exactly one position)"
+        else:
+            plan = "Fixed repetition count at {}".format(
+                "saved positions" if saved else "the current position"
+            )
+        self.plan_status.setText("Current plan: " + plan)
 
     def sequencePreviewData(self):
         from leica_microscope.recording_sequence import (
@@ -775,6 +867,9 @@ class ConfigEditor(QtWidgets.QWidget):
         if "unit_minus" in meta and value < 0:
             field.setSuffix(" "+meta["unit_minus"])
         self.config.set(section, name, value)
+        if (section, name) in (("files", "positions_filename"),
+                               ("repetition", "minimum_duration_hours")):
+            self.updatePlanStatus()
 
         if not self.no_update:
             self.no_update = True

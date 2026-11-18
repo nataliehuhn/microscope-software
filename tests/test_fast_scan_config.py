@@ -282,6 +282,36 @@ def test_duration_gui_explains_multiple_saved_positions_before_launch(editor_env
         editor.close()
 
 
+def test_recording_plan_buttons_switch_schedule_and_position_source(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    positions = tmp_path / "one-position.txt"
+    np.savetxt(str(positions), [[10, 20, 500]], fmt="%d")
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["stack"]["projection_stop_um"].setValue(120)
+        with patch.object(module.QtWidgets.QFileDialog, "getOpenFileName",
+                          return_value=(str(positions), "")):
+            editor.button_repeated_saved.click()
+        assert editor.fields["files"]["positions_filename"].text() == str(positions)
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 0
+        assert "saved positions" in editor.plan_status.text()
+
+        editor.button_timed_saved.click()
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 24
+        assert "one saved position" in editor.plan_status.text()
+
+        editor.button_single_position_preset.click()
+        assert editor.fields["files"]["positions_filename"].text() == "None"
+        assert "current position" in editor.plan_status.text()
+
+        editor.button_repeated_current.click()
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 0
+        assert "Fixed repetition count" in editor.plan_status.text()
+        assert editor.fields["stack"]["projection_stop_um"].value() == 120
+    finally:
+        editor.close()
+
+
 def test_assay_preset_is_editable_and_preserves_sample_settings(editor_environment, tmp_path):
     module, options, app = editor_environment
     positions = tmp_path / "positions.txt"
