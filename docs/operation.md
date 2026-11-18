@@ -11,8 +11,10 @@
 5. For optimized mode enter `projection_start_um`, `projection_stop_um` and
    `projection_time_s`, then use **Save and Start** when ready for acquisition.
 
-For a long recording at one position with one mode and a 1 x 1 grid, set
-`minimum_duration_hours` in **repetition** (for example, `24.0` for 24 hours).
+For a long recording at one position, click **Single position, 24 h** in Record.
+It uses the current microscope position and keeps your selected mode and Z scan
+settings. Adjust `minimum_duration_hours` in **repetition** for another duration.
+Use one mode and a 1 x 1 grid.
 Set `repetition_time_delta` for the minimum interval between starts. A positive
 duration uses elapsed time rather than `repetition_count`, and the final scan
 can finish shortly after the requested duration. Leave the positions file empty
