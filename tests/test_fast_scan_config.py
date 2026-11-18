@@ -103,11 +103,9 @@ def test_duration_rejects_multiple_cycles(tmp_path):
 
 
 def test_duration_rejects_multiple_saved_positions_before_hardware(tmp_path):
-    code = generate(tmp_path, positions=True, duration_hours=24)
-    with patch.object(microscope_module, "Microscope") as connect, \
-            pytest.raises(ValueError, match="exactly one saved position"):
-        exec(compile(code, "duration_record.py", "exec"), {})
-    connect.assert_not_called()
+    with pytest.raises(ValueError, match="Set Positions filename to None"):
+        generate(tmp_path, positions=True, duration_hours=24)
+    assert not (tmp_path / "images with spaces" / "test_record.py").exists()
 
 
 def test_duration_rejects_multiple_modes_before_acquisition(tmp_path):
@@ -261,6 +259,25 @@ def test_standalone_stack_template_still_loads(editor_environment):
     try:
         assert "projection" in editor.fields["stack"]
         assert editor.config.has_option("stack", "projection")
+    finally:
+        editor.close()
+
+
+def test_duration_gui_explains_multiple_saved_positions_before_launch(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    options.program = "generate_record.py"
+    positions = tmp_path / "positions.txt"
+    np.savetxt(str(positions), [[10, 20, 500], [30, 40, 600]], fmt="%d")
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["files"]["positions_filename"].setText(str(positions))
+        editor.fields["repetition"]["minimum_duration_hours"].setValue(2)
+        with patch.object(module.QtWidgets.QMessageBox, "warning") as warning, \
+                patch.object(module.subprocess, "run") as launch:
+            editor.ButtonSave()
+        launch.assert_not_called()
+        assert "2 saved positions" in warning.call_args.args[2]
+        assert "current stage position" in warning.call_args.args[2]
     finally:
         editor.close()
 

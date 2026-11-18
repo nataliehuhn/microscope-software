@@ -727,6 +727,20 @@ class ConfigEditor(QtWidgets.QWidget):
             if "position_sequence" in self.fields:
                 try:
                     self.sequencePreviewData()
+                    duration_hours = float(self.config.get(
+                        "repetition", "minimum_duration_hours", fallback="0"
+                    ))
+                    filename, _ = getMeta(self.config.get("files", "positions_filename"))
+                    if duration_hours > 0 and filename and filename != "None":
+                        from leica_microscope.recording_sequence import load_sequence_positions
+                        position_count = len(load_sequence_positions(filename))
+                        if position_count != 1:
+                            raise ValueError(
+                                "Duration recording found {} saved positions. "
+                                "To scan the current stage position, set Positions filename "
+                                "to None. To scan a saved position, select a file with "
+                                "exactly one position.".format(position_count)
+                            )
                 except (OSError, ValueError) as error:
                     QtWidgets.QMessageBox.warning(self, "Check recording sequence", str(error))
                     return
