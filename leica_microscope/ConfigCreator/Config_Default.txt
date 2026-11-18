@@ -30,6 +30,7 @@ projection_stop_um = 100.0
 projection_time_s = 4.0
 
 [repetition]
+minimum_duration_hours = 0.0
 repetition_count = 1
 repetition_time_delta = 0
 repeat_positions_separately = False

@@ -211,10 +211,30 @@ def recording_microscope():
     mic.setShutter = Mock()
     mic.getMetadata = Mock(return_value={"MicroscopeName": "Mic3"})
     mic.cam.getMetadata = Mock(return_value={"Exposure": "3.0"})
+    mic.cam.getMaxValue = Mock(return_value=255)
     mic.memmap_writer = SimpleNamespace(store_image=Mock())
     mic.recordTimedContinuousProjection = Mock(return_value=recorder_result())
     mic.used_disk_space = 0
     return mic
+
+
+def test_saturation_warns_and_preserves_completed_scan(tmp_path):
+    mic = recording_microscope()
+    image, _, indices, _, diagnostics = recorder_result()
+    mic.recordTimedContinuousProjection.return_value = (
+        image, np.full_like(image, 255), indices, indices.copy(), diagnostics,
+    )
+    with pytest.warns(RuntimeWarning, match="recording will continue"):
+        result = mic.rec_timed_continuous_projection(
+            str(tmp_path / "bright_{z}.tif"), -10, 10, 1.0,
+            cached_preflight={"p99": 255, "saturated_fraction": 1.0},
+        )
+    assert result["saturated_projection_fraction"] == 1.0
+    assert len(list(tmp_path.glob("bright_*.tif"))) == 4
+    with tifffile.TiffFile(str(tmp_path / "bright_MaxProj.tif")) as tif:
+        assert json.loads(tif.pages[0].description)[
+            "SaturatedProjectionFraction"
+        ] == 1.0
 
 
 @pytest.mark.parametrize("frame_count,dtype", [(30, np.uint8), (257, np.uint16)])

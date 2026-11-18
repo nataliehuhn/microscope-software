@@ -16,6 +16,17 @@ from leica_microscope.includes.helper_functions import getConfig, modesToDictLis
 config, timestamp = getConfig()
 
 modes = modesToDictList(config.general.record_modes)
+duration_hours = float(config.repetition.minimum_duration_hours) if config.has_option(
+    "repetition", "minimum_duration_hours") else 0.0
+if not math.isfinite(duration_hours) or duration_hours < 0:
+    raise ValueError("Minimum recording duration must be finite and nonnegative")
+duration_mode = duration_hours > 0
+if duration_mode and (len(modes) != 1 or config.grid.countx != 1
+                      or config.grid.county != 1):
+    raise ValueError(
+        "Duration recording needs one mode and a 1 x 1 grid; "
+        "use one current or saved position"
+    )
 
 if config.has_option("stack", "projection_mode"):
     projection_mode = config.stack.projection_mode
@@ -65,6 +76,9 @@ if config.files.positions_filename != None:
     output("")
     output("# load positions from a file")
     output(f"positions = mic.loadPositions(r'{config.files.positions_filename}')")
+    if duration_mode:
+        output('if len(positions) != 1: raise ValueError("Duration recording needs exactly one saved position")')
+        output("mic.setPos(positions[0])")
 
 if len(modes) > 1:
     output("")
@@ -93,13 +107,15 @@ if config.grid.countx > 1 or config.grid.county > 1:
     """)
 
 properties = {}
+if duration_mode and config.files.positions_filename is not None:
+    properties["pos"] = "0"
 
 # A batch may stay at a scan edge only when nothing else in the generated
 # loops changes position or mode between repetitions.
 optimized_series = (
     projection_mode == "optimized"
-    and config.repetition.repetition_count > 1
-    and config.files.positions_filename is None
+    and (config.repetition.repetition_count > 1 or duration_mode)
+    and (config.files.positions_filename is None or duration_mode)
     and config.grid.countx == 1 and config.grid.county == 1
     and len(modes) == 1
 )
@@ -114,7 +130,8 @@ if optimized_multisite:
     output("with mic.timed_projection_session() as timed_series:")
     indent += 1
 
-if config.repetition.repeat_positions_separately is True and config.files.positions_filename != None:
+if (not duration_mode and config.repetition.repeat_positions_separately is True
+        and config.files.positions_filename != None):
     output("")
     output("# iterate over positions")
     output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
@@ -124,15 +141,23 @@ if config.repetition.repeat_positions_separately is True and config.files.positi
     output("mic.setPos(pos)")
     properties["pos"] = "pos_index"
 
-if config.repetition.repetition_count > 1 and not optimized_series:
+if (config.repetition.repetition_count > 1 or duration_mode) and not optimized_series:
     output("")
     output("# iterate over repetitions")
-    output(f"for rep in bar(range({config.repetition.repetition_count}), desc='repetition'):")
+    if duration_mode:
+        output("from leica_microscope.recording_schedule import duration_repetitions")
+        output("for rep in duration_repetitions(mic.waitSinceLast, "
+               f"{duration_hours * 3600!r}, "
+               f"{float(config.repetition.repetition_time_delta)!r}):")
+    else:
+        output(f"for rep in bar(range({config.repetition.repetition_count}), desc='repetition'):")
     indent += 1
-    output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
+    if not duration_mode:
+        output(f"mic.waitSinceLast({config.repetition.repetition_time_delta})")
     properties["repetition"] = "rep"
 
-if config.repetition.repeat_positions_separately is not True and config.files.positions_filename != None:
+if (not duration_mode and config.repetition.repeat_positions_separately is not True
+        and config.files.positions_filename != None):
     output("")
     output("# iterate over positions")
     output(f"for pos_index, pos in enumerate(bar(positions, desc='position')):")
@@ -192,11 +217,15 @@ if projection_mode == "optimized":
         raise ValueError("Optimized projection time must be at least 0.25 s")
     if optimized_series:
         output("# alternate timed passes without returning to center between repetitions")
+        duration_argument = (
+            f"duration_s={duration_hours * 3600!r}, " if duration_mode else ""
+        )
+        count_argument = "None" if duration_mode else str(config.repetition.repetition_count)
         output(
             f"mic.rec_timed_continuous_projection_series(filename, "
             f"z_start_um={z_start_um}, z_stop_um={z_stop_um}, "
             f"scan_time_s={scan_time_s}, "
-            f"repetition_count={config.repetition.repetition_count}, "
+            f"repetition_count={count_argument}, {duration_argument}"
             f"repetition_time_delta={config.repetition.repetition_time_delta}, "
             f"wait_before_image_s={config.general.wait_before_image})"
         )

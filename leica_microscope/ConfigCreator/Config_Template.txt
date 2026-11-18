@@ -50,6 +50,8 @@ projection_time_s = 4.0 #min:0.25, unit:s, desc:"Optimized only: requested time 
       Between each repetition a minimum of 'repetition_time_delta' seconds must pass.
       If the recording takes more time, 'repetition_time_delta' can be exceeded.
 
+minimum_duration_hours = 0.0 #min:0, max:10000, unit:h, desc:"One position and one mode only: record for at least this many hours. Set above zero to use elapsed time instead of repetition_count. Leave positions_filename empty to use the current position, or select a file containing exactly one saved position. The last scan can finish after the requested time."
+
 repetition_count = 1  #min:1
 repetition_time_delta = 0.0  #unit:s
 repeat_positions_separately = False #desc:"If true, all prepetitions are carried out on the first position, before moving to the second repetition."

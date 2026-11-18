@@ -21,12 +21,14 @@ PACKAGE = ROOT / "leica_microscope"
 microscope_module = importlib.import_module("leica_microscope.microscope")
 
 
-def generate(tmp_path, stack=None, positions=False, modes=False, grid=False, repetitions=1):
+def generate(tmp_path, stack=None, positions=False, modes=False, grid=False,
+             repetitions=1, duration_hours=0):
     config = helper_functions.Config(str(PACKAGE / "ConfigCreator/Config_Default.txt"))
     target = tmp_path / "images with spaces"
     config.set("files", "target_folder", str(target))
     config.set("files", "positions_filename", str(tmp_path / "positions.txt") if positions else "None")
     config.set("repetition", "repetition_count", str(repetitions))
+    config.set("repetition", "minimum_duration_hours", str(duration_hours))
     if modes:
         config.set("general", "record_modes", "[Mode_BF(3, 0), Mode_Fluo1(20, 2.5)]")
     if grid:
@@ -46,6 +48,48 @@ def generate(tmp_path, stack=None, positions=False, modes=False, grid=False, rep
     code = script.read_text()
     compile(code, str(script), "exec")
     return code
+
+
+@pytest.mark.parametrize("mode", ["off", "optimized"])
+def test_one_position_duration_ignores_repetition_count(tmp_path, mode):
+    code = generate(tmp_path, stack={"projection_mode": mode},
+                    repetitions=1, duration_hours=24)
+    assert "duration_s=86400.0" in code if mode == "optimized" else \
+        "duration_repetitions(mic.waitSinceLast, 86400.0" in code
+    assert "bar(range(1)" not in code
+
+
+def test_saved_single_position_duration_runs_until_elapsed_time(tmp_path):
+    code = generate(tmp_path, stack={"projection_mode": "off"},
+                    positions=True, repetitions=1, duration_hours=0.001)
+    mic = PlanMicroscope()
+    mic.loadPositions = lambda path: np.array([[10, 20, 500]])
+    elapsed = [0.0]
+    starts = []
+
+    def record_image(filename):
+        starts.append(elapsed[0])
+        elapsed[0] += 2.0
+
+    mic.rec_image = record_image
+    from leica_microscope import recording_schedule
+    schedule = recording_schedule.duration_repetitions
+
+    def fake_schedule(wait, duration_s, interval_s):
+        return schedule(wait, duration_s, interval_s, clock=lambda: elapsed[0])
+
+    with patch.object(microscope_module, "Microscope", return_value=mic), \
+            patch.object(recording_schedule, "duration_repetitions", fake_schedule), \
+            contextlib.redirect_stdout(io.StringIO()):
+        exec(compile(code, "generated_record.py", "exec"), {})
+    assert starts == [0.0, 2.0]
+    assert elapsed[0] >= 3.6
+    assert len(mic.position_changes) == 1
+
+
+def test_duration_rejects_multiple_modes_before_acquisition(tmp_path):
+    with pytest.raises(ValueError, match="one mode"):
+        generate(tmp_path, modes=True, duration_hours=24)
 
 
 class PlanMicroscope(Microscope):
@@ -168,6 +212,7 @@ def test_record_gui_selector_and_legacy_config_migration(editor_environment, tmp
     editor = module.ConfigEditor(options)
     try:
         fields = editor.fields["stack"]
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 0
         assert fields["projection_mode"].currentData() == "default"
         assert fields["projection_start_um"].isHidden()
         fields["projection_mode"].setCurrentIndex(2)

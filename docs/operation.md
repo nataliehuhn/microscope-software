@@ -11,6 +11,16 @@
 5. For optimized mode enter `projection_start_um`, `projection_stop_um` and
    `projection_time_s`, then use **Save and Start** when ready for acquisition.
 
+For a long recording at one position with one mode and a 1 x 1 grid, set
+`minimum_duration_hours` in **repetition** (for example, `24.0` for 24 hours).
+Set `repetition_time_delta` for the minimum interval between starts. A positive
+duration uses elapsed time rather than `repetition_count`, and the final scan
+can finish shortly after the requested duration. Leave the positions file empty
+to stay at the current position, or select a file with exactly one saved
+position. Set the duration back to `0` to use the traditional repetition count.
+When setting up a 24-hour experiment, check the displayed duration before
+pressing **Save and Start**.
+
 Z offsets are relative to current focus or the focus saved with a position.
 Generated scripts, normal entry points and tests serve different purposes:
 starting a recording or an experiment runner can move the microscope.
@@ -23,6 +33,10 @@ room beyond the requested endpoints for acceleration. Scans check timing within
 They save raw minimum/maximum projections and contributing frame-index maps.
 TIFF metadata records scan timing, exposure, coverage and microscope identity.
 Exposure is selected near the frame period; review illumination for that exposure.
+If the preview or a completed projection has more than 1% saturated pixels,
+Record prints a warning and keeps saving images. The warning and saturation
+fraction are also stored in TIFF metadata. Saturated pixels cannot be recovered;
+adjust illumination or gain before starting when quantitative intensities matter.
 The starting Z is restored across repeated scans and on exit.
 
 In the position finder, a left double-click moves XY while preserving Z.
