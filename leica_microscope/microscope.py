@@ -1764,6 +1764,7 @@ class Microscope:
         }
         camera_count = []
         last_block_id = []
+        frame_sequence_gaps = []
         camera_thread = None
         command_start = None
         command_end = None
@@ -1785,10 +1786,19 @@ class Microscope:
 
         def on_frame(image, ticks, exposure_us, block_id, retrieved_at):
             if last_block_id and block_id != last_block_id[-1] + 1:
-                raise RuntimeError(
-                    "Basler frame sequence skipped from {} to {}".format(
+                gap = {
+                    "previous_block_id": last_block_id[-1],
+                    "next_block_id": block_id,
+                    "missing_frame_count": max(0, block_id - last_block_id[-1] - 1),
+                    "retrieved_host_s": retrieved_at,
+                }
+                frame_sequence_gaps.append(gap)
+                print(
+                    "WARNING: Basler frame sequence skipped from {} to {}; "
+                    "projection may have incomplete Z coverage. Recording "
+                    "will continue; gap is recorded in TIFF diagnostics.".format(
                         last_block_id[-1], block_id
-                    )
+                    ), flush=True,
                 )
             last_block_id.append(block_id)
             exposure_start = (
@@ -1989,6 +1999,13 @@ class Microscope:
             ),
             "camera_clock": clock,
             "raw_frame_count": len(frame_records),
+            "frame_sequence_gaps": frame_sequence_gaps,
+            "missing_frame_count": sum(
+                gap["missing_frame_count"] for gap in frame_sequence_gaps
+            ),
+            "camera_stream_diagnostics": getattr(
+                self.cam, "last_stream_diagnostics", {}
+            ),
             "selected_frame_count": len(selected),
             "index_unit": "zero_based_contributing_frame_number",
             "command_duration_s": float(command_end - command_start),
@@ -2025,7 +2042,9 @@ class Microscope:
         Save the same unmodified MinProj, MaxProj, MinIndices and MaxIndices
         image types as the existing projection recorder. Each acquisition is
         checked against the requested Z-crossing time; an out-of-tolerance
-        attempt is discarded and the stage speed adjusted.
+        attempt is retried with adjusted stage speed. Completed scans with
+        frame loss or low coverage are saved with warnings, never discarded.
+        If timing retries are exhausted, save the last completed scan too.
         """
         if "{z" not in str(filename):
             raise ValueError("Projection filename must contain a {z} field")
@@ -2125,13 +2144,42 @@ class Microscope:
                     "selected_frame_count": diagnostics["selected_frame_count"],
                     "accepted": bool(valid_timing and valid_coverage),
                 })
-                if valid_timing and valid_coverage:
-                    break
-                if attempt_number == int(maximum_attempts):
-                    raise RuntimeError(
-                        "Timed projection did not meet timing/coverage limits "
-                        "after {} attempts".format(maximum_attempts)
+                stream_diagnostics = diagnostics.get("camera_stream_diagnostics", {})
+                frame_loss = bool(
+                    diagnostics.get("frame_sequence_gaps")
+                    or stream_diagnostics.get("failed_grab_count", 0)
+                    or stream_diagnostics.get("retrieve_timeout_count", 0)
+                )
+                quality_warnings = []
+                if frame_loss:
+                    quality_warnings.append("Camera frames were lost or delayed")
+                if not valid_coverage:
+                    quality_warnings.append(
+                        "Exposure coverage {:.1%} is below {:.1%}".format(
+                            diagnostics["coverage_fraction"], minimum_coverage_fraction
+                        )
                     )
+                if not valid_timing:
+                    quality_warnings.append(
+                        "Scan time {:.3f}s differs from requested {:.3f}s".format(
+                            actual_time, scan_time_s
+                        )
+                    )
+                diagnostics["quality_warnings"] = quality_warnings
+                diagnostics["quality_passed"] = bool(
+                    valid_timing and valid_coverage and not frame_loss
+                )
+                attempts[-1]["accepted"] = diagnostics["quality_passed"]
+                if (valid_timing or not valid_coverage or frame_loss
+                        or attempt_number == int(maximum_attempts)):
+                    for message in quality_warnings:
+                        print(
+                            "WARNING: {}: {}. Saving available images with "
+                            "quality flags; recording will continue.".format(
+                                filename, message
+                            ), flush=True,
+                        )
+                    break
                 if valid_coverage:
                     speed_override = int(round(
                         diagnostics["selected_speed"]
@@ -2180,6 +2228,9 @@ class Microscope:
             "ActualScanTimeSeconds": diagnostics["actual_scan_time_s"],
             "ExposureCoverageFraction": diagnostics["coverage_fraction"],
             "SelectedFrameCount": diagnostics["selected_frame_count"],
+            "ProjectionQualityPassed": diagnostics["quality_passed"],
+            "ProjectionWarnings": json.dumps(diagnostics["quality_warnings"]),
+            "MissingFrameCount": diagnostics.get("missing_frame_count", 0),
             "ProjectionAttempts": json.dumps(attempts, sort_keys=True),
             "ProjectionPreflight": json.dumps(preflight, sort_keys=True),
             "SaturatedProjectionFraction": diagnostics[
