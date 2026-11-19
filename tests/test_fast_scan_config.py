@@ -103,10 +103,9 @@ def test_duration_rejects_multiple_cycles(tmp_path):
 
 
 def test_duration_rejects_multiple_saved_positions_before_hardware(tmp_path):
-    code = generate(tmp_path, positions=True, duration_hours=24)
     with patch.object(microscope_module, "Microscope") as connect, \
-            pytest.raises(ValueError, match="exactly one saved position"):
-        exec(compile(code, "duration_record.py", "exec"), {})
+            pytest.raises(ValueError, match="exactly one position"):
+        generate(tmp_path, positions=True, duration_hours=24)
     connect.assert_not_called()
 
 
@@ -265,6 +264,72 @@ def test_standalone_stack_template_still_loads(editor_environment):
         editor.close()
 
 
+def test_simple_view_preserves_advanced_settings_and_text_roundtrip(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["cycles"]["cycle_count"].setValue(5)
+        editor.fields["grid"]["countx"].setValue(3)
+        editor.fields["repetition"]["repeat_positions_separately"].setChecked(True)
+        before = {section: dict(editor.config.items(section)) for section in editor.config.sections()}
+        assert editor.group_boxes["cycles"].isHidden()
+        assert editor.Scintilla.isHidden()
+        assert "5" in editor.advanced_summary.text()
+        for visible in (True, False, True, False):
+            editor.advanced_toggle.setChecked(visible)
+        assert before == {section: dict(editor.config.items(section)) for section in editor.config.sections()}
+        saved = tmp_path / "saved.txt"
+        with saved.open("w") as out:
+            editor.config.write(out)
+        editor.LoadConfig(str(saved))
+        assert editor.fields["cycles"]["cycle_count"].value() == 5
+        assert editor.fields["repetition"]["repeat_positions_separately"].isChecked()
+        editor.action_text_editor.setChecked(True)
+        assert not editor.Scintilla.isHidden()
+    finally:
+        editor.close()
+
+
+def test_empty_modes_and_incomplete_config_do_not_crash_or_start(editor_environment):
+    module, options, app = editor_environment
+    options.program = "must_not_run.py"
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["general"]["record_modes"].setText("[]")
+        with patch.object(module.subprocess, "run") as run, patch.object(module.QtWidgets.QMessageBox, "warning") as warning:
+            editor.ButtonSave()
+            run.assert_not_called()
+            warning.assert_called_once()
+        editor.Scintilla.setText("[unfinished")
+        assert editor.config_error
+        with patch.object(module.subprocess, "run") as run, patch.object(module.QtWidgets.QMessageBox, "warning"):
+            editor.ButtonSave()
+            run.assert_not_called()
+    finally:
+        editor.close()
+
+
+def test_decimal_gain_valid_and_duration_multi_position_blocked(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    options.program = "must_not_run.py"
+    editor = module.ConfigEditor(options)
+    try:
+        modes = editor.fields["general"]["record_modes"]
+        modes.setText("[Mode_Fluo1(20, 2.5)]")
+        assert modes.CheckIfModeIsValid(modes.tags[0])
+        positions = tmp_path / "two.txt"
+        np.savetxt(str(positions), [[1, 2, 3], [4, 5, 6]], fmt="%d")
+        editor.fields["files"]["positions_filename"].setText(str(positions))
+        editor.fields["repetition"]["minimum_duration_hours"].setValue(24)
+        with patch.object(module.subprocess, "run") as run, patch.object(module.QtWidgets.QMessageBox, "warning") as warning:
+            editor.ButtonSave()
+            run.assert_not_called()
+            assert "one saved position" in warning.call_args.args[2]
+        assert not editor.fields["repetition"]["repetition_count"].isEnabled()
+    finally:
+        editor.close()
+
+
 def test_assay_preset_is_editable_and_preserves_sample_settings(editor_environment, tmp_path):
     module, options, app = editor_environment
     positions = tmp_path / "positions.txt"
@@ -275,7 +340,7 @@ def test_assay_preset_is_editable_and_preserves_sample_settings(editor_environme
         editor.fields["stack"]["projection_start_um"].setValue(0)
         editor.fields["stack"]["projection_stop_um"].setValue(70)
         editor.fields["stack"]["projection_time_s"].setValue(2.0)
-        editor.button_assay_preset.click()
+        editor.action_assay_preset.trigger()
         settings, rows = editor.sequencePreviewData()
         assert settings.positions_per_condition == 5
         assert settings.cycle_interval_hours == 3
@@ -305,14 +370,14 @@ def test_single_position_preset_sets_duration_and_keeps_scan_settings(editor_env
         editor.fields["files"]["positions_filename"].setText(str(tmp_path / "many.txt"))
         editor.fields["stack"]["projection_start_um"].setValue(-20)
         editor.fields["stack"]["projection_stop_um"].setValue(80)
-        editor.button_single_position_preset.click()
+        editor.action_single_position_preset.trigger()
         assert editor.fields["repetition"]["minimum_duration_hours"].value() == 24
         assert editor.fields["repetition"]["repetition_time_delta"].value() == 15
         assert editor.fields["files"]["positions_filename"].text() == "None"
         assert editor.fields["cycles"]["cycle_count"].value() == 1
         assert editor.fields["stack"]["projection_start_um"].value() == -20
         assert editor.fields["stack"]["projection_stop_um"].value() == 80
-        editor.button_assay_preset.click()
+        editor.action_assay_preset.trigger()
         assert editor.fields["repetition"]["minimum_duration_hours"].value() == 0
     finally:
         editor.close()
@@ -366,3 +431,52 @@ def test_invalid_condition_grouping_fails_before_connecting_to_microscope(tmp_pa
             pytest.raises(ValueError, match="cannot be split"):
         exec(compile(code, "invalid_assay.py", "exec"), {})
     connect.assert_not_called()
+
+
+def test_duration_gui_explains_multiple_saved_positions_before_launch(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    options.program = "generate_record.py"
+    positions = tmp_path / "positions.txt"
+    np.savetxt(str(positions), [[10, 20, 500], [30, 40, 600]], fmt="%d")
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["files"]["positions_filename"].setText(str(positions))
+        editor.fields["repetition"]["minimum_duration_hours"].setValue(2)
+        with patch.object(module.QtWidgets.QMessageBox, "warning") as warning, \
+                patch.object(module.subprocess, "run") as launch:
+            editor.ButtonSave()
+        launch.assert_not_called()
+        assert "2 saved positions" in warning.call_args.args[2]
+        assert "current stage position" in warning.call_args.args[2]
+    finally:
+        editor.close()
+
+
+def test_recording_plan_buttons_switch_schedule_and_position_source(editor_environment, tmp_path):
+    module, options, app = editor_environment
+    positions = tmp_path / "one-position.txt"
+    np.savetxt(str(positions), [[10, 20, 500]], fmt="%d")
+    editor = module.ConfigEditor(options)
+    try:
+        editor.fields["stack"]["projection_stop_um"].setValue(120)
+        with patch.object(module.QtWidgets.QFileDialog, "getOpenFileName",
+                          return_value=(str(positions), "")):
+            editor.action_repeated_saved.trigger()
+        assert editor.fields["files"]["positions_filename"].text() == str(positions)
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 0
+        assert "saved positions" in editor.plan_status.text()
+
+        editor.action_timed_saved.trigger()
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 24
+        assert "one saved position" in editor.plan_status.text()
+
+        editor.action_single_position_preset.trigger()
+        assert editor.fields["files"]["positions_filename"].text() == "None"
+        assert "current position" in editor.plan_status.text()
+
+        editor.action_repeated_current.trigger()
+        assert editor.fields["repetition"]["minimum_duration_hours"].value() == 0
+        assert "Fixed repetition count" in editor.plan_status.text()
+        assert editor.fields["stack"]["projection_stop_um"].value() == 120
+    finally:
+        editor.close()

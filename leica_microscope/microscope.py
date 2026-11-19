@@ -1,10 +1,10 @@
 import sys
 import time
 import socket
-import warnings
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from collections import deque
 import numpy as np
 from pathlib import Path
 import tifffile
@@ -21,6 +21,10 @@ from leica_microscope.streamer import MemmapWriter
 from leica_microscope.includes.config import getConfig, writeConfigChange
 from leica_microscope.includes.helper_functions import format_partial, format_with_default, formatByteNumber, bar
 from leica_microscope.recording_schedule import duration_repetitions
+from leica_microscope.recording_resilience import (
+    RecoverableAcquisitionError, continue_after_missing_acquisition,
+    recording_warning, log_acquisition_issue,
+)
 from leica_microscope.projection_motion import (
     aligned_camera_host_times,
     desired_velocity_steps_s,
@@ -142,6 +146,17 @@ def _next_calibration_speed(trials, target_duration, min_speed, max_speed):
     return max(min_speed, min(max_speed, int(candidate)))
 
 
+def raise_camera_failure(errors, message):
+    if errors:
+        error = errors[0]
+        if isinstance(error, RecoverableAcquisitionError):
+            raise error
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
+            raise error
+        raise RuntimeError("{}: {!r}".format(message, error)) from error
+    raise RecoverableAcquisitionError(message)
+
+
 class NoMicroscopeFound(Exception):
     pass
 
@@ -199,6 +214,9 @@ class TimedProjectionSession:
             center_z_steps=self.center_z, leave_at_edge=True,
             cached_preflight=self.preflight, save_callback=self._queue_files,
         )
+        if result.get("skipped", False):
+            self.finish_position()
+            return result
         self.preflight = result["preflight"]
         self.pass_index += 1
         if "actual_scan_time_s" in result:
@@ -841,27 +859,41 @@ class Microscope:
             self.cam.setBinning(binning)
         if self.cam is not None:
             # Keep the viewer in sync with per-channel recording settings.
-            self.memmap_writer.store_parameters()
+            self._publish_preview(parameters=True)
+
+    def _publish_preview(self, image=None, parameters=False):
+        writer = getattr(self, "memmap_writer", None)
+        if writer is None:
+            return
+        try:
+            if parameters:
+                writer.store_parameters()
+            else:
+                writer.store_image(image)
+        except Exception as error:
+            self.memmap_writer = None
+            recording_warning("Live preview disabled after {}; TIFF recording will continue.".format(error))
 
     """ recoding functions """
 
+    @continue_after_missing_acquisition
     def rec_image(self, filename: str):
         """ Record a single image to a file. """
         # open the shutter before recording
         if self.isFluo():
             self.setShutter(True)
 
-        # take the image
-        im = self.cam.getImage()
+        try:
+            im = self.cam.getImage()
+        finally:
+            if self.isFluo():
+                self.setShutter(False)
 
-        # close the shutter after recording
-        if self.isFluo():
-            self.setShutter(False)
-
-        self.memmap_writer.store_image(im)
+        self._publish_preview(im)
         self.saveImage(format_with_default(filename), im)
         print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
 
+    @continue_after_missing_acquisition
     def rec_stack(self, filename: str, n_below: int = 50, n_above: int = 250, slice_thickness_um: float = 5.0, fast_recording: bool = False, save_projection: bool = False):
         """
         Record a stack of images.
@@ -924,22 +956,29 @@ class Microscope:
             if is_fluo:
                 self.setShutter(False)
 
+        stack_metadata = {}
+        calibration = getattr(self, "projection_calibration", None)
+        if fast_recording and calibration is not None:
+            stack_metadata["ProjectionCalibration"] = json.dumps(calibration)
+            stack_metadata["ProjectionQualityPassed"] = bool(calibration.get("success"))
+            if not calibration.get("success"):
+                log_acquisition_issue(filename, "Fast stack calibration did not meet timing tolerance")
         if 1:
             if not save_projection:
                 # save single images
                 for i in range(n_slices):
-                    self.saveImage(format_with_default(filename, z=i), buffer[i])
+                    self.saveImage(format_with_default(filename, z=i), buffer[i], stack_metadata)
             else:
                 # save projection
                 dtype = np.uint8
                 if n_slices > 256:
                     dtype = np.uint16
                 #for i in range(n_slices):
-                #    self.saveImage(format_with_default(filename, z=i), buffer[i])
-                self.saveImage(format_with_default(filename, z='MinProj'), np.min(buffer, axis=0))
-                self.saveImage(format_with_default(filename, z='MaxProj'), np.max(buffer, axis=0))
-                self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype))
-                self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype))
+                #    self.saveImage(format_with_default(filename, z=i), buffer[i], stack_metadata)
+                self.saveImage(format_with_default(filename, z='MinProj'), np.min(buffer, axis=0), stack_metadata)
+                self.saveImage(format_with_default(filename, z='MaxProj'), np.max(buffer, axis=0), stack_metadata)
+                self.saveImage(format_with_default(filename, z='MinIndices{}'.format(n_slices)), np.argmin(buffer, axis=0).astype(dtype), stack_metadata)
+                self.saveImage(format_with_default(filename, z='MaxIndices{}'.format(n_slices)), np.argmax(buffer, axis=0).astype(dtype), stack_metadata)
             print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
 
 
@@ -1033,14 +1072,14 @@ class Microscope:
         # prepare the video buffer (a numpy array the size to hold all images)
         buffer = self.cam.getVideoBuffer(n_slices)
 
-        with self.cam.fast_recording:
-            for i in range(n_slices):
-                self.setZPos(z + z_start + slice_thickness_steps * i)
-                buffer[i] = self.cam.getImage()
-                self.memmap_writer.store_image(buffer[i])
-
-        # reset position
-        self.setZPos(z)
+        try:
+            with self.cam.fast_recording:
+                for i in range(n_slices):
+                    self.setZPos(z + z_start + slice_thickness_steps * i)
+                    buffer[i] = self.cam.getImage()
+                    self._publish_preview(buffer[i])
+        finally:
+            self.setZPos(z)
 
         return buffer
 
@@ -1072,10 +1111,9 @@ class Microscope:
             )
 
         if calibration is not None and not calibration.get("success", False):
-            raise RuntimeError(
-                "Fast projection recording refused because calibration status "
-                "is '{}'. The requested Z range cannot be covered reliably at "
-                "the current camera rate.".format(calibration.get("status"))
+            recording_warning(
+                "Fast projection calibration status is '{}'; coverage may be incomplete. "
+                "Using the best measured speed; recording will continue.".format(calibration.get("status"))
             )
 
         original_speed = self.getZSpeed()
@@ -1107,7 +1145,7 @@ class Microscope:
                 self.setZPos(z + z_stop)
                 self.cam.getVideo(buffer)
 
-            self.memmap_writer.store_image(buffer[n_slices//2])
+            self._publish_preview(buffer[n_slices//2])
         finally:
             # Restore even when camera acquisition or memmap publishing fails.
             self.setZSpeed(max_speed)
@@ -1388,7 +1426,7 @@ class Microscope:
             self.projection_calibration = result
 
             if status == "max_speed_limited":
-                warnings.warn(
+                recording_warning(
                     "Projection timing is unreachable: even maximum Z speed "
                     "takes {:.4f}s, while the camera records {} frames in {:.4f}s. "
                     "The selected maximum speed is best-effort and will not cover "
@@ -1398,7 +1436,7 @@ class Microscope:
                     RuntimeWarning,
                 )
             elif status == "max_iterations":
-                warnings.warn(
+                recording_warning(
                     "Projection calibration did not reach its timing tolerance; "
                     "using the best measured speed {}.".format(
                         self.calibrated_proj_speed
@@ -1409,7 +1447,6 @@ class Microscope:
         finally:
             # Calibration must never leave the stage displaced or change its
             # normal operating speed, including when camera/stage timing fails.
-            active_exception = sys.exc_info()[0] is not None
             restoration_errors = []
             for description, restore in (
                 ("set maximum return speed", lambda: self.setZSpeed(max_speed)),
@@ -1420,7 +1457,7 @@ class Microscope:
                     restore()
                 except BaseException as error:
                     restoration_errors.append("{}: {!r}".format(description, error))
-            if restoration_errors and not active_exception:
+            if restoration_errors:
                 raise RuntimeError(
                     "Calibration state restoration failed: {}".format(
                         "; ".join(restoration_errors)
@@ -1448,7 +1485,7 @@ class Microscope:
                     raise ValueError("model contains a non-positive sample")
             return model
         except (OSError, ValueError, KeyError, TypeError) as error:
-            warnings.warn(
+            recording_warning(
                 "Could not load pre-accelerated projection model {}: {}".format(
                     path, error
                 ),
@@ -1730,7 +1767,7 @@ class Microscope:
         acceleration_steps = estimate_acceleration_steps(model, selected_speed)
         initial_fps = float(self.cam.getMaximumFramerateAtShortExposure())
         if not np.isfinite(initial_fps) or initial_fps <= 0:
-            raise RuntimeError("The camera did not report a valid frame rate")
+            raise RecoverableAcquisitionError("The camera did not report a valid frame rate")
         if exposure_ms is None:
             # Leave a small guard for Basler's frame-period quantization while
             # keeping as many independent readouts as the camera can deliver.
@@ -1764,6 +1801,8 @@ class Microscope:
         }
         camera_count = []
         last_block_id = []
+        frame_sequence_gaps = []
+        acquisition_warnings = []
         camera_thread = None
         command_start = None
         command_end = None
@@ -1785,10 +1824,19 @@ class Microscope:
 
         def on_frame(image, ticks, exposure_us, block_id, retrieved_at):
             if last_block_id and block_id != last_block_id[-1] + 1:
-                raise RuntimeError(
-                    "Basler frame sequence skipped from {} to {}".format(
+                gap = {
+                    "previous_block_id": last_block_id[-1],
+                    "next_block_id": block_id,
+                    "missing_frame_count": max(0, block_id - last_block_id[-1] - 1),
+                    "retrieved_host_s": retrieved_at,
+                }
+                frame_sequence_gaps.append(gap)
+                print(
+                    "WARNING: Basler frame sequence skipped from {} to {}; "
+                    "projection may have incomplete Z coverage. Recording "
+                    "will continue; gap is recorded in TIFF diagnostics.".format(
                         last_block_id[-1], block_id
-                    )
+                    ), flush=True,
                 )
             last_block_id.append(block_id)
             exposure_start = (
@@ -1850,14 +1898,15 @@ class Microscope:
             self.cam.setExposure(exposure_ms)
             actual_exposure_ms = float(self.cam.exposure())
             actual_fps = float(self.cam.getFramerate())
-            if (not np.isfinite(actual_fps) or not np.isfinite(actual_exposure_ms)
-                    or actual_fps <= 0
-                    or actual_exposure_ms * actual_fps / 1000.0 < 0.95):
-                raise RuntimeError("Camera exposure duty cycle is below 95%")
+            if (not np.isfinite(actual_fps) or actual_fps <= 0
+                    or not np.isfinite(actual_exposure_ms) or actual_exposure_ms <= 0):
+                raise RecoverableAcquisitionError("Camera reported invalid exposure or frame rate")
+            if actual_exposure_ms * actual_fps / 1000.0 < 0.95:
+                acquisition_warnings.append("Camera exposure duty cycle is below 95%")
             if actual_fps < 0.99 * initial_fps:
-                raise RuntimeError(
-                    "Near-continuous exposure reduced camera readout rate"
-                )
+                acquisition_warnings.append("Near-continuous exposure reduced camera readout rate")
+            for message in acquisition_warnings:
+                recording_warning(message + "; recording will continue.")
             clock = self.cam.latchTimestampClock()
             phase_seconds["setup_before_position_s"] = (
                 time.perf_counter() - method_started
@@ -1880,9 +1929,9 @@ class Microscope:
                 )
                 camera_thread.start()
                 if not camera_started.wait(timeout=5.0) or camera_errors:
-                    raise RuntimeError("Could not start Basler projection stream")
+                    raise_camera_failure(camera_errors, "Could not start Basler projection stream")
                 if not camera_first_frame.wait(timeout=5.0) or camera_errors:
-                    raise RuntimeError("No initial Basler projection frame")
+                    raise_camera_failure(camera_errors, "No initial Basler projection frame")
                 phase_seconds["camera_startup_s"] = (
                     time.perf_counter() - camera_startup_started
                 )
@@ -1895,9 +1944,7 @@ class Microscope:
                 while True:
                     position = sample_z(session)
                     if camera_errors:
-                        raise RuntimeError(
-                            "Basler projection failed: {!r}".format(camera_errors[0])
-                        )
+                        raise_camera_failure(camera_errors, "Basler projection failed")
                     if direction * (position - command_stop) >= 0:
                         reached_stop_at = time.perf_counter()
                         phase_seconds["lead_to_lead_motion_s"] = (
@@ -1918,16 +1965,15 @@ class Microscope:
                 if camera_thread.is_alive():
                     raise TimeoutError("Basler projection stream did not stop")
                 if camera_errors:
-                    raise RuntimeError(
-                        "Basler projection failed: {!r}".format(camera_errors[0])
-                    )
-                scan_complete = True
+                    raise_camera_failure(camera_errors, "Basler projection failed")
+                scan_complete = images["min"] is not None and images["max"] is not None
         finally:
             stop_camera.set()
             with samples_changed:
                 samples_changed.notify_all()
             if camera_thread is not None and camera_thread.is_alive():
                 camera_thread.join(timeout=6.0)
+            worker_alive = camera_thread is not None and camera_thread.is_alive()
             restore_z = not leave_at_edge or not scan_complete
             try:
                 return_start = time.perf_counter()
@@ -1942,13 +1988,15 @@ class Microscope:
                     if restore_z:
                         self.setZSpeed(original_speed)
                 finally:
+                    if worker_alive:
+                        raise RuntimeError("Basler worker did not stop; cannot safely start another scan")
                     self.cam.setExposure(original_exposure_ms)
         phase_seconds["acquisition_total_s"] = (
             time.perf_counter() - method_started
         )
 
         if images["min"] is None or images["max"] is None:
-            raise RuntimeError("No camera exposures intersected the requested Z span")
+            raise RecoverableAcquisitionError("No camera exposures intersected the requested Z span")
         selected = [frame for frame in frame_records if frame["selected"]]
         coverage = exposure_coverage(
             direction * start, direction * stop,
@@ -1962,7 +2010,7 @@ class Microscope:
                 if (direction * z0 <= direction * target <= direction * z1
                         and z1 != z0):
                     return t0 + (target - z0) * (t1 - t0) / (z1 - z0)
-            raise RuntimeError("Stage samples did not cross Z {}".format(target))
+            raise RecoverableAcquisitionError("Insufficient samples to time Z crossing {}".format(target))
 
         start_crossing = crossing_time(start)
         stop_crossing = crossing_time(stop)
@@ -1991,6 +2039,14 @@ class Microscope:
             ),
             "camera_clock": clock,
             "raw_frame_count": len(frame_records),
+            "frame_sequence_gaps": frame_sequence_gaps,
+            "acquisition_warnings": acquisition_warnings,
+            "missing_frame_count": sum(
+                gap["missing_frame_count"] for gap in frame_sequence_gaps
+            ),
+            "camera_stream_diagnostics": getattr(
+                self.cam, "last_stream_diagnostics", {}
+            ),
             "selected_frame_count": len(selected),
             "index_unit": "zero_based_contributing_frame_number",
             "command_duration_s": float(command_end - command_start),
@@ -2014,6 +2070,7 @@ class Microscope:
             )
         return images["min"], images["max"], diagnostics
 
+    @continue_after_missing_acquisition
     def rec_timed_continuous_projection(
             self, filename: str, z_start_um: float, z_stop_um: float,
             scan_time_s: float,
@@ -2027,7 +2084,9 @@ class Microscope:
         Save the same unmodified MinProj, MaxProj, MinIndices and MaxIndices
         image types as the existing projection recorder. Each acquisition is
         checked against the requested Z-crossing time; an out-of-tolerance
-        attempt is discarded and the stage speed adjusted.
+        attempt is retried with adjusted stage speed. Completed scans with
+        frame loss or low coverage are saved with warnings, never discarded.
+        If timing retries are exhausted, save the last completed scan too.
         """
         if "{z" not in str(filename):
             raise ValueError("Projection filename must contain a {z} field")
@@ -2067,7 +2126,7 @@ class Microscope:
                 try:
                     max_fps = self.cam.getMaximumFramerateAtShortExposure()
                     if not np.isfinite(max_fps) or max_fps <= 0:
-                        raise RuntimeError("The camera did not report a valid frame rate")
+                        raise RecoverableAcquisitionError("Camera reported an invalid preview frame rate")
                     self.cam.setExposure(1000.0 / max_fps - 0.26)
                     preview = self.cam.getImage()
                 finally:
@@ -2082,19 +2141,14 @@ class Microscope:
             else:
                 preflight = dict(cached_preflight)
             mode = self.send_command_and_wait("70028", int)
+            preflight_warnings = []
             if mode == self.MODE_TL_BF and preflight["p99"] < 5:
-                raise RuntimeError(
-                    "Timed projection image is nearly black; check the "
-                    "camera light path and illumination"
-                )
+                message = "Timed projection image is nearly black; check the camera light path and illumination"
+                preflight_warnings.append(message)
+                recording_warning(message + "; recording will continue.")
             if preflight["saturated_fraction"] > 0.01:
-                print(
-                    "WARNING: Optimized Z scan preview has {:.1%} saturated "
-                    "pixels; recording will continue.".format(
-                        preflight["saturated_fraction"]
-                    ), flush=True
-                )
-                warnings.warn(
+                preflight_warnings.append("Preview pixels are saturated")
+                recording_warning(
                     "Optimized Z scan preview has {:.1%} saturated pixels. "
                     "Reduce illumination or gain for better quantitative data; "
                     "recording will continue.".format(
@@ -2129,13 +2183,42 @@ class Microscope:
                     "selected_frame_count": diagnostics["selected_frame_count"],
                     "accepted": bool(valid_timing and valid_coverage),
                 })
-                if valid_timing and valid_coverage:
-                    break
-                if attempt_number == int(maximum_attempts):
-                    raise RuntimeError(
-                        "Timed projection did not meet timing/coverage limits "
-                        "after {} attempts".format(maximum_attempts)
+                stream_diagnostics = diagnostics.get("camera_stream_diagnostics", {})
+                frame_loss = bool(
+                    diagnostics.get("frame_sequence_gaps")
+                    or stream_diagnostics.get("failed_grab_count", 0)
+                    or stream_diagnostics.get("retrieve_timeout_count", 0)
+                )
+                quality_warnings = preflight_warnings + list(diagnostics.get("acquisition_warnings", []))
+                if frame_loss:
+                    quality_warnings.append("Camera frames were lost or delayed")
+                if not valid_coverage:
+                    quality_warnings.append(
+                        "Exposure coverage {:.1%} is below {:.1%}".format(
+                            diagnostics["coverage_fraction"], minimum_coverage_fraction
+                        )
                     )
+                if not valid_timing:
+                    quality_warnings.append(
+                        "Scan time {:.3f}s differs from requested {:.3f}s".format(
+                            actual_time, scan_time_s
+                        )
+                    )
+                diagnostics["quality_warnings"] = quality_warnings
+                diagnostics["quality_passed"] = bool(
+                    valid_timing and valid_coverage and not frame_loss and not quality_warnings
+                )
+                attempts[-1]["accepted"] = diagnostics["quality_passed"]
+                if (valid_timing or not valid_coverage or frame_loss
+                        or attempt_number == int(maximum_attempts)):
+                    for message in quality_warnings:
+                        print(
+                            "WARNING: {}: {}. Saving available images with "
+                            "quality flags; recording will continue.".format(
+                                filename, message
+                            ), flush=True,
+                        )
+                    break
                 if valid_coverage:
                     speed_override = int(round(
                         diagnostics["selected_speed"]
@@ -2155,14 +2238,9 @@ class Microscope:
             ))
             diagnostics["saturated_projection_fraction"] = saturated_fraction
             if saturated_fraction > 0.01:
-                print(
-                    "WARNING: Optimized Z scan has {:.1%} saturated "
-                    "projection pixels; images were saved and recording "
-                    "will continue.".format(saturated_fraction), flush=True
-                )
-                warnings.warn(
+                recording_warning(
                     "Optimized Z scan has {:.1%} saturated projection pixels. "
-                    "Images are saved and recording will continue; consider "
+                    "Images will be saved and recording will continue; consider "
                     "reducing illumination or gain.".format(
                         saturated_fraction
                     ), RuntimeWarning
@@ -2170,6 +2248,11 @@ class Microscope:
         finally:
             self.setShutter(original_shutter)
 
+        if saturated_fraction > 0.01:
+            diagnostics["quality_warnings"].append("Projection pixels are saturated")
+            diagnostics["quality_passed"] = False
+        for message in diagnostics["quality_warnings"]:
+            log_acquisition_issue(filename, message)
         phase_seconds = diagnostics.setdefault("phase_seconds", {})
         phase_seconds["preflight_s"] = preflight_elapsed
         phase_seconds["verified_acquisition_s"] = (
@@ -2184,6 +2267,9 @@ class Microscope:
             "ActualScanTimeSeconds": diagnostics["actual_scan_time_s"],
             "ExposureCoverageFraction": diagnostics["coverage_fraction"],
             "SelectedFrameCount": diagnostics["selected_frame_count"],
+            "ProjectionQualityPassed": diagnostics["quality_passed"],
+            "ProjectionWarnings": json.dumps(diagnostics["quality_warnings"]),
+            "MissingFrameCount": diagnostics.get("missing_frame_count", 0),
             "ProjectionAttempts": json.dumps(attempts, sort_keys=True),
             "ProjectionPreflight": json.dumps(preflight, sort_keys=True),
             "SaturatedProjectionFraction": diagnostics[
@@ -2230,7 +2316,7 @@ class Microscope:
                 for path, image, image_metadata in images_to_save
             ])
         if getattr(self, "memmap_writer", None) is not None:
-            self.memmap_writer.store_image(maximum)
+            self._publish_preview(maximum)
         if save_callback is None:
             print(f"[{formatByteNumber(self.used_disk_space)}] ", end="")
         else:
@@ -2263,6 +2349,7 @@ class Microscope:
         The origin is held fixed for all passes and restored at maximum Z speed
         on success or failure. One previous pass may be written in a background
         thread while the next is acquired; hardware access stays on this thread.
+        Return the latest 1024 compact summaries. Full diagnostics stay in TIFFs.
         """
         if duration_s:
             if not np.isfinite(duration_s) or duration_s <= 0:
@@ -2277,7 +2364,8 @@ class Microscope:
         if (duration_s or repetition_count > 1) and "{repetition" not in str(filename):
             raise ValueError("Series filename must contain {repetition}")
 
-        results = []
+        # Full frame/stage histories live in the TIFFs, not in a day-long list.
+        results = deque(maxlen=1024)
         with self.timed_projection_session() as session:
             if duration_s:
                 repetitions = duration_repetitions(
@@ -2294,10 +2382,15 @@ class Microscope:
                     format_partial(filename, repetition=rep),
                     z_start_um, z_stop_um, scan_time_s,
                 )
-                results.append(result)
+                summary = {"repetition": rep, "filename": format_partial(filename, repetition=rep)}
+                summary.update({key: result[key] for key in (
+                    "skipped", "quality_passed", "quality_warnings", "actual_scan_time_s",
+                    "selected_frame_count", "missing_frame_count", "coverage_fraction",
+                ) if key in result})
+                results.append(summary)
         print("[{} saved] ".format(formatByteNumber(
             self.used_disk_space)), end="")
-        return results
+        return list(results)
 
     def recordPreacceleratedStackToBuffer(
             self, z: int, z_start: int, z_stop: int,
@@ -2428,19 +2521,13 @@ class Microscope:
                 camera_thread.daemon = True
                 camera_thread.start()
                 if not camera_started.wait(timeout=5.0):
-                    raise TimeoutError("Timed out starting projection camera")
+                    raise_camera_failure(camera_errors, "Timed out starting projection camera")
                 if camera_errors:
-                    raise RuntimeError(
-                        "Projection camera failed: {!r}".format(camera_errors[0])
-                    )
+                    raise_camera_failure(camera_errors, "Projection camera failed")
                 if not camera_first_frame.wait(timeout=5.0):
-                    raise TimeoutError(
-                        "Timed out waiting for the first projection frame"
-                    )
+                    raise_camera_failure(camera_errors, "Timed out waiting for the first projection frame")
                 if camera_errors:
-                    raise RuntimeError(
-                        "Projection camera failed: {!r}".format(camera_errors[0])
-                    )
+                    raise_camera_failure(camera_errors, "Projection camera failed")
 
                 command_start = time.perf_counter()
                 session.send("71022 {}".format(command_stop))
@@ -2448,6 +2535,8 @@ class Microscope:
                 deadline = command_end + max(5.0, 2.0 * predicted_motion_s)
                 reached_command_stop = False
                 while camera_thread.is_alive() or not reached_command_stop:
+                    if camera_errors:
+                        raise_camera_failure(camera_errors, "Projection camera failed")
                     before = time.perf_counter()
                     position = session.query("71023", int)
                     after = time.perf_counter()
@@ -2467,9 +2556,7 @@ class Microscope:
                 if camera_thread.is_alive():
                     raise TimeoutError("Projection camera did not finish")
                 if camera_errors:
-                    raise RuntimeError(
-                        "Projection camera failed: {!r}".format(camera_errors[0])
-                    )
+                    raise_camera_failure(camera_errors, "Projection camera failed")
                 timing = timing_holder[0]
 
                 # One final sample guarantees that interpolation spans the
@@ -2486,6 +2573,8 @@ class Microscope:
             self.setZSpeed(max_speed)
             self.setZPos(z)
             self.setZSpeed(original_speed)
+            if camera_thread is not None and camera_thread.is_alive():
+                raise RuntimeError("Projection camera worker did not stop")
 
         frame_times = aligned_camera_host_times(timing)
         raw_frame_positions = interpolate_frame_positions(
@@ -2506,16 +2595,16 @@ class Microscope:
         signed_start = direction * absolute_start
         signed_stop = direction * absolute_stop
         signed_raw_positions = direction * raw_frame_positions
-        if (
-            np.min(signed_raw_positions) > signed_start
-            or np.max(signed_raw_positions) < signed_stop
-        ):
-            raise RuntimeError(
-                "Camera pre-roll did not span the requested projection range"
-            )
+        full_coverage = bool(
+            np.min(signed_raw_positions) <= signed_start
+            and np.max(signed_raw_positions) >= signed_stop
+        )
+        if not full_coverage:
+            recording_warning("Camera pre-roll did not span the requested projection range; recording will continue.")
         frame_spacings = np.diff(signed_frame_positions)
         diagnostics = {
             "method": "preaccelerated_preroll_window",
+            "quality_passed": full_coverage,
             "frame_count": frame_count,
             "raw_frame_count": raw_frame_count,
             "minimum_frames": int(minimum_frames),
@@ -2565,6 +2654,7 @@ class Microscope:
         }
         return buffer, diagnostics
 
+    @continue_after_missing_acquisition
     def rec_preaccelerated_projection(
             self, filename: str, n_below: int = 0, n_above: int = 100,
             slice_thickness_um: float = 10.0, minimum_frames: int = None,
@@ -2599,11 +2689,14 @@ class Microscope:
             if is_fluo:
                 self.setShutter(False)
 
-        self.memmap_writer.store_image(buffer[len(buffer) // 2])
+        self._publish_preview(buffer[len(buffer) // 2])
         index_dtype = np.uint8 if len(buffer) <= 256 else np.uint16
         metadata = {
-            "PreacceleratedProjection": json.dumps(diagnostics, sort_keys=True)
+            "PreacceleratedProjection": json.dumps(diagnostics, sort_keys=True),
+            "ProjectionQualityPassed": diagnostics.get("quality_passed", True),
         }
+        if not diagnostics.get("quality_passed", True):
+            log_acquisition_issue(filename, "Camera pre-roll did not span the requested projection range")
         self.saveImage(
             format_with_default(filename, z="MinProj"),
             np.min(buffer, axis=0),

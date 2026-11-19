@@ -1,5 +1,24 @@
 # Change log
 
+## 2026-11-19 - Simpler Record and interruption audit
+
+- Keep everyday recording controls visible; put presets and text editing in Options,
+  and grids/sequences/cycles under Advanced settings without changing saved values.
+- Validate incomplete text, imaging modes and incompatible duration plans before launch.
+- Extend complete serial framing to stage and metadata commands; reject incomplete
+  batches and duplicate replies without resending movement commands.
+- Bring Mic2 camera recovery to Mic3 while retaining Mic3 geometry validation.
+- Add original-application launchers with separate settings and monochrome icons.
+
+## 2026-11-19 — Projection serial reply framing
+
+- Buffer partial persistent-session serial reads until the CR terminator before
+  parsing, preventing short-reply crashes and truncated numeric position values.
+- Log and discard malformed frames while waiting within the existing timeout;
+  preserve controller errors and bound buffering of unterminated replies.
+- Added simulated regression tests for fragmented replies, malformed frames,
+  controller errors, and timeouts. Targeted serial and projection tests: 61 passed.
+
 ## 2026-10-28 — Repository organization
 
 - Imported Mic3's current working source, preserving upstream history.

@@ -12,7 +12,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(software_root))
 
 from leica_microscope.includes.helper_functions import getConfig, modesToDictList, formatDict
-from leica_microscope.recording_sequence import SequenceSettings
+from leica_microscope.recording_sequence import SequenceSettings, load_sequence_positions
 
 config, timestamp = getConfig()
 
@@ -34,6 +34,15 @@ if (sequence_settings.position_order != "as_saved" or sequence_settings.settle_p
     raise ValueError("Choose a positions file to use a position sequence or settling pattern")
 if duration_mode and sequence_settings.cycle_count != 1:
     raise ValueError("Duration recording needs exactly one full cycle")
+
+if duration_mode and config.files.positions_filename is not None:
+    position_count = len(load_sequence_positions(config.files.positions_filename))
+    if position_count != 1:
+        raise ValueError(
+            "Duration recording found {} saved positions. Set Positions filename "
+            "to None to scan the current stage position, or select a file with "
+            "exactly one position.".format(position_count)
+        )
 
 if config.has_option("stack", "projection_mode"):
     projection_mode = config.stack.projection_mode

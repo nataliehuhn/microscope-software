@@ -24,6 +24,7 @@ class SimulatedCamera:
     def __init__(self):
         self.exposure_ms = 3.0
         self.fail = False
+        self.drop_frames = set()
         self.stopped = False
 
     def exposure(self):
@@ -55,6 +56,8 @@ class SimulatedCamera:
                 first.set()
                 if self.fail and i == 3:
                     raise RuntimeError("simulated dropped camera frame")
+                if i in self.drop_frames:
+                    continue
                 callback(np.full((3, 4), i % 255, np.uint8),
                          int(i * 1e9 / 50), self.exposure_ms * 1000,
                          i + 1, time.perf_counter())
@@ -274,17 +277,41 @@ def test_retries_keep_origin_and_only_save_accepted_scan(tmp_path):
     assert mic.saveImage.call_count == 4
 
 
-def test_failed_coverage_saves_nothing_and_restores_shutter(tmp_path):
+@pytest.mark.parametrize("duration,coverage", [(1.0, 0.8), (1.2, 0.999)])
+def test_quality_failure_warns_saves_and_restores_shutter(tmp_path, capsys, duration, coverage):
     mic = recording_microscope()
-    mic.recordTimedContinuousProjection.return_value = recorder_result(coverage=0.8)
-    mic.saveImage = Mock()
-    with pytest.raises(RuntimeError, match="timing/coverage limits"):
-        mic.rec_timed_continuous_projection(
-            str(tmp_path / "bad_{z}.tif"), -10, 10, 1.0,
-            cached_preflight={"p99": 100, "saturated_fraction": 0.0},
-        )
-    mic.saveImage.assert_not_called()
+    mic.recordTimedContinuousProjection.return_value = recorder_result(duration, coverage)
+    result = mic.rec_timed_continuous_projection(
+        str(tmp_path / "bad_{z}.tif"), -10, 10, 1.0,
+        cached_preflight={"p99": 100, "saturated_fraction": 0.0},
+    )
+    assert len(list(tmp_path.glob("*.tif"))) == 4
+    assert not result["quality_passed"]
+    assert result["quality_warnings"]
+    assert "recording will continue" in capsys.readouterr().out
     assert mic.setShutter.call_args.args == (0,)
+    with tifffile.TiffFile(str(tmp_path / "bad_MaxProj.tif")) as tif:
+        metadata = json.loads(tif.pages[0].description)
+        assert not metadata["ProjectionQualityPassed"]
+        assert json.loads(metadata["ProjectionWarnings"])
+    assert mic.recordTimedContinuousProjection.call_count == (1 if coverage < 0.98 else 3)
+
+
+@pytest.mark.parametrize("start,stop", [(-10, 10), (10, -10)])
+def test_dropped_frames_save_diagnostics_and_next_scan_runs(start, stop, capsys):
+    mic = SimulatedMicroscope()
+    mic.cam.drop_frames = {14, 15, 18}
+    with patch.object(microscope_module, "PersistentCommandSession", mic.command_session):
+        first = mic.recordTimedContinuousProjection(start, stop, 0.5)
+        mic.cam.drop_frames = set()
+        second = mic.recordTimedContinuousProjection(start, stop, 0.5)
+    assert first[-1]["missing_frame_count"] == 3
+    assert len(first[-1]["frame_sequence_gaps"]) == 2
+    assert first[-1]["coverage_fraction"] < second[-1]["coverage_fraction"]
+    assert second[-1]["missing_frame_count"] == 0
+    assert "WARNING: Basler frame sequence skipped" in capsys.readouterr().out
+    assert (mic.getZPos(), mic.speed, mic.cam.exposure()) == (500, 123, 3.0)
+
 
 
 def test_session_alternates_direction_restores_origin_and_reports_write_errors():

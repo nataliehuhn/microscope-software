@@ -2,9 +2,22 @@ from pypylon import pylon
 from pypylon import genicam
 import numpy as np
 import time
+from functools import wraps
+
+from leica_microscope.recording_resilience import RecoverableAcquisitionError
 
 from leica_microscope.includes.config import getConfig
 from leica_microscope.camera import CameraBase
+
+
+def recover_camera_capture(method):
+    @wraps(method)
+    def capture(*args, **kwargs):
+        try:
+            return method(*args, **kwargs)
+        except genicam.GenericException as error:
+            raise RecoverableAcquisitionError("Basler acquisition failed: {}".format(error)) from error
+    return capture
 
 
 class Camera(CameraBase):
@@ -77,6 +90,7 @@ class Camera(CameraBase):
         self.getVideoWithTimestamps(buffer)
         return buffer
 
+    @recover_camera_capture
     def getVideoWithTimestamps(
             self, buffer, started_event=None, first_frame_event=None):
         frame_count = buffer.shape[0]
@@ -84,31 +98,34 @@ class Camera(CameraBase):
         host_times = np.zeros(frame_count, dtype=np.float64)
         grab_succeeded = np.zeros(frame_count, dtype=bool)
         capture_start = time.perf_counter()
-        self.camera.StartGrabbingMax(buffer.shape[0])
-        if started_event is not None:
-            started_event.set()
-        for i in range(buffer.shape[0]):
-            grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-            try:
-                host_times[i] = time.perf_counter()
-                camera_ticks[i] = grabResult.GetTimeStamp()
-                grab_succeeded[i] = grabResult.GrabSucceeded()
-                if i == 0 and first_frame_event is not None:
-                    first_frame_event.set()
-                if grab_succeeded[i]:
-                    im = grabResult.Array
-                    if self.config["flip_y"]:
-                        im = im[::-1]
-                    if self.config.get("flip_x", self.config.get("filp_x", False)):
-                        im = im[:, ::-1]
-                    buffer[i] = im
-            finally:
-                grabResult.Release()
+        try:
+            self.camera.StartGrabbingMax(buffer.shape[0])
+            if started_event is not None:
+                started_event.set()
+            for i in range(buffer.shape[0]):
+                grabResult = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+                try:
+                    host_times[i] = time.perf_counter()
+                    camera_ticks[i] = grabResult.GetTimeStamp()
+                    grab_succeeded[i] = grabResult.GrabSucceeded()
+                    if i == 0 and first_frame_event is not None:
+                        first_frame_event.set()
+                    if grab_succeeded[i]:
+                        im = grabResult.Array
+                        if self.config["flip_y"]:
+                            im = im[::-1]
+                        if self.config.get("flip_x", self.config.get("filp_x", False)):
+                            im = im[:, ::-1]
+                        buffer[i] = im
+                finally:
+                    grabResult.Release()
+        finally:
+            self._stop_capture()
         capture_end = time.perf_counter()
 
         if not np.all(grab_succeeded):
             failed = np.flatnonzero(~grab_succeeded).tolist()
-            raise RuntimeError("Basler failed to grab frames {}".format(failed))
+            raise RecoverableAcquisitionError("Basler failed to grab frames {}".format(failed))
 
         tick_frequency = None
         if frame_count > 1:
@@ -125,6 +142,7 @@ class Camera(CameraBase):
             "capture_end_host_s": capture_end,
         }
 
+    @recover_camera_capture
     def latchTimestampClock(self, samples=8):
         """Align the Basler nanosecond clock to the host monotonic clock.
 
@@ -150,6 +168,7 @@ class Camera(CameraBase):
         }
 
 
+    @recover_camera_capture
     def getMaximumFramerateAtShortExposure(self):
         """Measure the configured full-resolution readout limit, then restore exposure."""
         if self.camera.IsGrabbing():
@@ -162,54 +181,120 @@ class Camera(CameraBase):
             self.camera.ExposureTime = original_exposure_us
 
 
+    def _stop_capture(self):
+        try:
+            self.camera.StopGrabbing()
+            if self.camera.IsGrabbing():
+                raise RuntimeError("Basler acquisition is still running")
+        except genicam.GenericException as error:
+            raise RuntimeError("Could not stop Basler acquisition safely") from error
+
+    def getStreamStatistics(self):
+        """Read supported transport counters without making acquisition fail."""
+        statistics = {}
+        try:
+            node_map = self.camera.GetStreamGrabberNodeMap()
+            for name in (
+                    "Statistic_Buffer_Underrun_Count", "Statistic_Failed_Buffer_Count",
+                    "Statistic_Missed_Frame_Count", "Statistic_Resynchronization_Count",
+                    "Statistic_Total_Buffer_Count"):
+                try:
+                    node = node_map.GetNode(name)
+                    if node is not None and genicam.IsReadable(node):
+                        statistics[name] = int(node.GetValue())
+                except (AttributeError, genicam.GenericException):
+                    pass
+        except (AttributeError, genicam.GenericException):
+            pass
+        return statistics
+
+    @recover_camera_capture
     def streamFramesWithTimestamps(
             self, on_frame, stop_event, started_event=None,
             first_frame_event=None):
         """Stream frames to a callback without allocating a video stack.
 
-        The callback must finish using the image before returning; the Pylon
-        buffer is released immediately afterward.  Chunk timestamps identify
-        acquisition start, not host retrieval time.
+        Copy and release each Pylon buffer before the callback waits for stage
+        samples or computes extrema. Chunk timestamps identify acquisition
+        start, not host retrieval time. Recoverable grab failures are logged.
         """
-        self.camera.StartGrabbing(pylon.GrabStrategy_OneByOne)
-        if started_event is not None:
-            started_event.set()
+        diagnostics = {
+            "failed_grab_count": 0, "retrieve_timeout_count": 0,
+            "max_callback_duration_s": 0.0, "grab_errors": [],
+        }
+        self.last_stream_diagnostics = diagnostics
+        original_buffers = int(self.camera.MaxNumBuffer.Value)
+        # About 128 MiB at most for the enlarged pool, and never reduce an
+        # operator's existing pool. This absorbs short scheduling stalls.
+        payload = max(1, int(self.camera.PayloadSize.Value))
+        buffer_count = max(original_buffers, min(64, (128 * 1024 ** 2) // payload))
+        self.camera.MaxNumBuffer = buffer_count
+        diagnostics["max_num_buffer"] = buffer_count
+        statistics_before = self.getStreamStatistics()
+        diagnostics["transport_before"] = statistics_before
         count = 0
         try:
+            self.camera.StartGrabbing(pylon.GrabStrategy_OneByOne)
+            # Some transports reset counters when a new stream starts.
+            statistics_before = self.getStreamStatistics()
+            diagnostics["transport_before"] = statistics_before
+            if started_event is not None:
+                started_event.set()
             while not stop_event.is_set():
-                result = self.camera.RetrieveResult(
-                    5000, pylon.TimeoutHandling_ThrowException
-                )
+                result = self.camera.RetrieveResult(500, pylon.TimeoutHandling_Return)
+                if result is None:
+                    diagnostics["retrieve_timeout_count"] += 1
+                    print("WARNING: Basler frame retrieval timed out; "
+                          "waiting for the next frame and continuing recording.", flush=True)
+                    continue
                 try:
                     retrieved_at = time.perf_counter()
                     if not result.GrabSucceeded():
-                        raise RuntimeError(
-                            "Basler frame grab failed: {}".format(
-                                result.GetErrorDescription()
-                            )
-                        )
-                    if count == 0 and first_frame_event is not None:
-                        first_frame_event.set()
-                    image = result.Array
-                    if self.config["flip_y"]:
-                        image = image[::-1]
-                    if self.config.get("flip_x", self.config.get("filp_x", False)):
-                        image = image[:, ::-1]
+                        description = str(result.GetErrorDescription())
+                        diagnostics["failed_grab_count"] += 1
+                        diagnostics["grab_errors"].append(description)
+                        print("WARNING: Basler frame grab failed: {}; "
+                              "skipping this frame and continuing recording.".format(
+                                  description), flush=True)
+                        continue
+                    image = result.Array.copy()
+                    ticks = int(result.GetTimeStamp())
+                    block_id = int(result.GetBlockID())
                     try:
                         exposure_us = float(result.ChunkExposureTime.Value)
                     except (AttributeError, genicam.GenericException):
                         exposure_us = float(self.camera.ExposureTime.Value)
-                    on_frame(
-                        image, int(result.GetTimeStamp()), exposure_us,
-                        int(result.GetBlockID()), retrieved_at,
-                    )
-                    count += 1
                 finally:
                     result.Release()
+                if count == 0 and first_frame_event is not None:
+                    first_frame_event.set()
+                if self.config["flip_y"]:
+                    image = image[::-1]
+                if self.config.get("flip_x", self.config.get("filp_x", False)):
+                    image = image[:, ::-1]
+                callback_started = time.perf_counter()
+                on_frame(image, ticks, exposure_us, block_id, retrieved_at)
+                diagnostics["max_callback_duration_s"] = max(
+                    diagnostics["max_callback_duration_s"],
+                    time.perf_counter() - callback_started,
+                )
+                count += 1
         finally:
-            self.camera.StopGrabbing()
+            try:
+                self._stop_capture()
+            finally:
+                diagnostics["transport_after"] = self.getStreamStatistics()
+                diagnostics["transport_delta"] = {
+                    key: value - statistics_before[key]
+                    for key, value in diagnostics["transport_after"].items()
+                    if key in statistics_before
+                }
+                diagnostics["delivered_frame_count"] = count
+                try:
+                    self.camera.MaxNumBuffer = original_buffers
+                except genicam.GenericException as error:
+                    raise RuntimeError("Could not restore Basler buffers") from error
         return count
-
 
     do_streaming = False
     def startStreaming(self, callback):
@@ -243,8 +328,17 @@ class Camera(CameraBase):
         self.do_streaming = False
 
 
+    @recover_camera_capture
     def getImage(self):
-        im = self.camera.GrabOne(11000).Array
+        result = self.camera.GrabOne(11000)
+        try:
+            if not result.GrabSucceeded():
+                raise RecoverableAcquisitionError(
+                    "Basler image grab failed: {}".format(result.GetErrorDescription())
+                )
+            im = result.Array.copy()
+        finally:
+            result.Release()
         if self.config["flip_y"]:
             im = im[::-1]
         return im
