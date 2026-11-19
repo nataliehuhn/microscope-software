@@ -3,6 +3,8 @@
 ## 2026-11-19 - Simpler Record and complete serial replies
 
 - Synchronize the simpler Record interface and framing fixes with Mic3.
+- Restore the original settings-left/text-right layout, top action buttons and
+  visible original controls; keep additional scheduling and presets in Options.
 - Retain existing Mic2 camera recovery, hardware settings and calibration.
 - Add original-app desktop launchers with independent settings and monochrome icons.
 
