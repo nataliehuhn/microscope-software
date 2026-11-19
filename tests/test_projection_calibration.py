@@ -1,5 +1,8 @@
 import unittest
 import warnings
+from contextlib import nullcontext
+from unittest.mock import Mock
+import numpy as np
 
 from leica_microscope.microscope import Microscope
 
@@ -170,7 +173,7 @@ class ProjectionCalibrationTests(unittest.TestCase):
         self.assertLessEqual(len(result["representative_trials"]), 5)
         self.assertTrue(any(speed < 2000000 for speed in mic.measured_speeds))
 
-    def test_fast_recording_refuses_unsuccessful_calibration(self):
+    def test_fast_recording_warns_on_unsuccessful_calibration(self):
         mic = CalibrationMicroscope(0.3, self.stage_model)
         mic.calibrated_proj_speed = mic.max_speed
         mic.projection_calibration = {
@@ -180,7 +183,10 @@ class ProjectionCalibrationTests(unittest.TestCase):
             "travel_steps": 25000,
         }
 
-        with self.assertRaisesRegex(RuntimeError, "recording refused"):
+        mic.cam.getVideoBuffer = Mock(return_value=np.ones((5, 2, 2)))
+        mic.cam.getVideo = Mock()
+        mic.nowait = nullcontext()
+        with self.assertWarnsRegex(RuntimeWarning, "recording will continue"):
             mic.recordFastStackToBuffer(
                 z=100000, z_start=0, z_stop=25000, n_slices=5
             )

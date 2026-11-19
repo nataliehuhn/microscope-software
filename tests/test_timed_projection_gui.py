@@ -120,15 +120,17 @@ class TimedProjectionGuiTests(unittest.TestCase):
         self.assertEqual(str(call[0]), "projection_MinIndices300.tif")
         self.assertEqual(call[1].dtype, np.uint16)
 
-    def test_timed_projection_rejects_dark_brightfield_before_motion(self):
+    def test_dark_brightfield_warns_and_saves(self):
         microscope = self.make_microscope([1.0])
         microscope.cam.getImage.return_value = np.zeros((2, 2), dtype=np.uint8)
-        with self.assertRaisesRegex(RuntimeError, "nearly black"):
-            microscope.rec_timed_continuous_projection(
-                "projection_{z}.tif", -100, 100, 1.0
-            )
-        microscope.recordTimedContinuousProjection.assert_not_called()
-        microscope.saveImage.assert_not_called()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertWarnsRegex(RuntimeWarning, "nearly black"):
+                result = microscope.rec_timed_continuous_projection(
+                    str(Path(directory) / "projection_{z}.tif"), -100, 100, 1.0
+                )
+            self.assertTrue((Path(directory) / "acquisition_warnings.jsonl").exists())
+        self.assertFalse(result["quality_passed"])
+        self.assertEqual(microscope.saveImage.call_count, 4)
         microscope.setShutter.assert_any_call(0)
 
     def generate(self, folder, projection_mode, has_mode_option=True,

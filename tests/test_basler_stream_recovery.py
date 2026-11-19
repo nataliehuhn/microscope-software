@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from leica_microscope.camera_basler import Camera
+from leica_microscope.camera_basler import Camera, genicam
+from leica_microscope.recording_resilience import RecoverableAcquisitionError
 
 
 class Result:
@@ -54,6 +55,9 @@ class Driver:
     def StopGrabbing(self):
         self.stopped = True
 
+    def IsGrabbing(self):
+        return not self.stopped
+
     def RetrieveResult(self, timeout, handling):
         return next(self.results)
 
@@ -101,3 +105,29 @@ def test_unexpected_callback_error_still_releases_and_restores_camera():
         cam.streamFramesWithTimestamps(callback, threading.Event())
     assert result.released and cam.camera.stopped
     assert cam.camera.MaxNumBuffer.Value == 10
+
+
+def test_sdk_timeout_is_recoverable_only_after_camera_cleanup():
+    cam = camera_with_results([])
+
+    def fail(*args):
+        raise genicam.GenericException("grab timeout")
+
+    cam.camera.RetrieveResult = fail
+    with pytest.raises(RecoverableAcquisitionError, match="grab timeout"):
+        cam.streamFramesWithTimestamps(lambda *args: None, threading.Event())
+    assert cam.camera.stopped
+    assert cam.camera.MaxNumBuffer.Value == 10
+    cam.camera.stopped = False
+    cam.camera.StopGrabbing = fail
+    with pytest.raises(RuntimeError, match="stop Basler acquisition safely") as caught:
+        cam.streamFramesWithTimestamps(lambda *args: None, threading.Event())
+    assert not isinstance(caught.value, RecoverableAcquisitionError)
+
+
+def test_single_image_releases_driver_buffer_and_returns_owned_pixels():
+    result = Result(7)
+    cam = camera_with_results([])
+    cam.camera.GrabOne = lambda timeout: result
+    image = cam.getImage()
+    assert result.released and np.all(image == 7)

@@ -29,12 +29,34 @@ and available Pylon transport counters before/after acquisition. Compare
 buffer-underrun and missed-frame counts with callback duration and frame
 retrieval latency to investigate future loss. Unsupported counters are omitted.
 
-This is recovery for transient acquisition and completed-scan quality problems,
-not a blanket exception handler: absent usable images, disconnected hardware,
-stage errors and failed disk writes still surface as errors. No automatic
-restart or moving hardware test is part of deployment.
+The subsequent long-measurement audit also removes hard quality stops for
+dark brightfield previews, exposure duty below 95%, reduced readout rate,
+incomplete pre-roll coverage, and a legacy calibration missing its timing
+tolerance. These conditions warn and are recorded in image metadata. Quality
+warnings remain nonfatal even with `PYTHONWARNINGS=error`.
+
+Single images, precise stacks, and both projection recording paths catch an
+explicit `RecoverableAcquisitionError` after hardware cleanup. Basler capture
+timeouts/SDK acquisition errors, no usable exposures, or missing crossing-time
+samples skip that acquisition, append its filename and reason to
+`acquisition_warnings.jsonl` beside the images, wait one second, and allow the
+next scheduled repetition. Failed captures never produce placeholder images.
+Optimized sessions restore the reference Z and discard cached preflight after
+a skipped scan. Camera buffers and precise-stack Z/shutter state are released
+or restored on failure; a worker that cannot stop is not treated as recoverable.
+
+Live-preview publishing errors disable that preview and warn without stopping
+TIFF writes. Optimized series now return only the latest 1024 compact summaries
+(with repetition numbers and filenames), instead of retaining every frame and
+stage sample for the entire measurement; full successful-scan diagnostics
+remain in the TIFFs.
+
+Stage/control/cleanup errors, invalid geometry or calibration identity, failed
+disk writes, unexpected programming errors and operator interruption still
+surface as errors. This is not a blanket exception handler or a guarantee of
+recovery from a disconnected device. No moving hardware test is part of deployment.
 
 Validation uses simulated cameras and stages, including real stream-loop tests
-with fake Pylon results. Deployment replaces only `microscope.py` and
-`camera_basler.py` in the Mic2 installation; its configuration and velocity
-model are preserved. Mic3 is not updated.
+with fake Pylon results. Deployment replaces `microscope.py`, `camera_basler.py`
+and adds `recording_resilience.py` in the Mic2 installation; its configuration
+and velocity model are preserved. Mic3 is not updated.
