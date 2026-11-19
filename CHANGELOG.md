@@ -2,8 +2,9 @@
 
 ## 2026-11-19 - Simpler Record and interruption audit
 
-- Keep everyday recording controls visible; put presets and text editing in Options,
-  and grids/sequences/cycles under Advanced settings without changing saved values.
+- Preserve the original settings-left/text-right Record layout and top action buttons.
+  Keep original fields and reset controls visible; put newer scheduling and presets
+  in Options without changing saved values.
 - Validate incomplete text, imaging modes and incompatible duration plans before launch.
 - Extend complete serial framing to stage and metadata commands; reject incomplete
   batches and duplicate replies without resending movement commands.

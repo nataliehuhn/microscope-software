@@ -311,42 +311,47 @@ class ConfigEditor(QtWidgets.QWidget):
         layout_hor = QtWidgets.QHBoxLayout()
         layout_vert.addLayout(layout_hor)
 
+        self.button_cancel = QtWidgets.QPushButton("Cancel")
+        self.button_cancel.clicked.connect(self.close)
+        layout_hor.addWidget(self.button_cancel)
+        self.button_reset = QtWidgets.QPushButton("Reset")
+        self.button_reset.clicked.connect(lambda: self.LoadConfig(self.options.reset))
+        layout_hor.addWidget(self.button_reset)
+        self.button_load = QtWidgets.QPushButton("Load")
+        self.button_load.clicked.connect(self.ButtonLoad)
+        layout_hor.addWidget(self.button_load)
+        self.button_save = QtWidgets.QPushButton("Save and Start" if options.program else "Save")
+        self.button_save.clicked.connect(self.ButtonSave)
+        layout_hor.addWidget(self.button_save)
+
         self.options_menu = QtWidgets.QMenu(self)
-        self.options_menu.addAction("Load settings…", self.ButtonLoad)
-        self.options_menu.addAction("Restore default settings", lambda: self.LoadConfig(self.options.reset))
+        self.advanced_toggle = self.options_menu.addAction("Show additional scheduling settings")
+        self.advanced_toggle.setCheckable(True)
         self.button_options = QtWidgets.QToolButton()
         self.button_options.setText("Options")
+        self.button_options.setMinimumWidth(80)
         self.button_options.setMenu(self.options_menu)
         self.button_options.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         layout_hor.addWidget(self.button_options)
-        layout_hor.addStretch()
-        self.advanced_toggle = QtWidgets.QCheckBox("Advanced settings")
-        layout_hor.addWidget(self.advanced_toggle)
 
-        self.plan_status = QtWidgets.QLabel()
-        layout_vert.addWidget(self.plan_status)
+        self.content_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.content_splitter.setChildrenCollapsible(False)
+        layout_vert.addWidget(self.content_splitter, 1)
         self.advanced_summary = QtWidgets.QLabel()
         self.advanced_summary.setWordWrap(True)
         layout_vert.addWidget(self.advanced_summary)
-
-        layout_content = QtWidgets.QHBoxLayout()
-        layout_vert.addLayout(layout_content)
-        footer = QtWidgets.QHBoxLayout()
-        layout_vert.addLayout(footer)
-        footer.addStretch()
-        self.button_cancel = QtWidgets.QPushButton("Close")
-        self.button_cancel.clicked.connect(self.close)
-        footer.addWidget(self.button_cancel)
-        self.button_save = QtWidgets.QPushButton("Save and Start" if options.program else "Save settings…")
-        self.button_save.clicked.connect(self.ButtonSave)
-        footer.addWidget(self.button_save)
+        self.plan_status = QtWidgets.QLabel()
+        layout_vert.addWidget(self.plan_status)
 
         self.form_scroll = QtWidgets.QScrollArea()
         self.form_scroll.setWidgetResizable(True)
+        self.form_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
         form = QtWidgets.QWidget()
         layout_gui = QtWidgets.QVBoxLayout(form)
+        layout_gui.setContentsMargins(4, 4, 4, 4)
+        layout_gui.setSpacing(4)
         self.form_scroll.setWidget(form)
-        layout_content.addWidget(self.form_scroll, 1)
+        self.content_splitter.addWidget(self.form_scroll)
 
         layout_vert = layout_gui
         self.config_default = Config(options.template)
@@ -355,12 +360,11 @@ class ConfigEditor(QtWidgets.QWidget):
         self.group_boxes = {}
         self.row_widgets = {}
         for section in self.config_default.sections():
-            box = QtWidgets.QGroupBox({"general": "Imaging", "files": "Files and positions",
-                                      "stack": "Z scan", "repetition": "Repetitions",
-                                      "position_sequence": "Position sequence", "cycles": "Full cycles"}
-                                     .get(section, section.title()))
+            box = QtWidgets.QGroupBox(section)
             box.setFlat(True)
             box_layout = QtWidgets.QGridLayout()
+            box_layout.setContentsMargins(8, 6, 8, 6)
+            box_layout.setVerticalSpacing(3)
             items = self.config_default.items(section)
             self.fields[section] = {}
             self.meta[section] = {}
@@ -373,17 +377,7 @@ class ConfigEditor(QtWidgets.QWidget):
                 name, value = item
                 value, meta = getMeta(value)
                 self.meta[section][name] = meta
-                simple_labels = {
-                    "record_modes": "Imaging modes", "wait_before_image": "Settle before image",
-                    "wait_at_start": "Start delay", "positions_filename": "Positions file",
-                    "target_folder": "Output folder", "slice_thickness": "Slice spacing",
-                    "slice_start": "First slice", "slice_stop": "Last slice",
-                    "minimum_duration_hours": "Duration (0 = count)",
-                    "repetition_count": "Repetitions", "repetition_time_delta": "Interval between starts",
-                    "repeat_positions_separately": "Repeat each position first",
-                    "roi": "Image height (ROI)", "binning": "Pixel binning",
-                }
-                label = QtWidgets.QLabel(meta.get("label", simple_labels.get(name, name.replace("_", " ").capitalize())))
+                label = QtWidgets.QLabel(name)
                 box_layout.addWidget(label, index, 0)
                 if meta["type"] == "int":
                     edit_field = QtWidgets.QSpinBox()
@@ -498,12 +492,10 @@ class ConfigEditor(QtWidgets.QWidget):
         self.config_error = None
         self.invalid_fields = set()
         self.Scintilla.textChanged.connect(self.EditorTextChanged)
-        layout_content.addWidget(self.Scintilla)
-        self.Scintilla.hide()
-        self.options_menu.addSeparator()
-        self.action_text_editor = self.options_menu.addAction("Edit configuration text")
-        self.action_text_editor.setCheckable(True)
-        self.action_text_editor.toggled.connect(self.showTextEditor)
+        self.content_splitter.addWidget(self.Scintilla)
+        self.content_splitter.setStretchFactor(0, 1)
+        self.content_splitter.setStretchFactor(1, 1)
+        self.content_splitter.setSizes([550, 550])
         self.advanced_toggle.toggled.connect(self.updateSimpleFields)
 
         self.config = Config()
@@ -527,7 +519,7 @@ class ConfigEditor(QtWidgets.QWidget):
         
         # center window in desktop
         DRect = QtWidgets.QDesktopWidget().screenGeometry()
-        self.resize(min(680, DRect.width() - 80), min(800, DRect.height() - 80))
+        self.resize(min(1150, DRect.width() - 80), min(900, DRect.height() - 80))
         WRect = self.geometry()
         self.move((DRect.width()-WRect.width())//2, (DRect.height()-WRect.height())//4)
 
@@ -619,28 +611,19 @@ class ConfigEditor(QtWidgets.QWidget):
         self.updateSequenceFields()
         self.updateSimpleFields()
 
-    def showTextEditor(self, visible):
-        self.Scintilla.setVisible(visible)
-        width = 1100 if visible else 680
-        self.resize(min(width, QtWidgets.QDesktopWidget().screenGeometry().width() - 80), self.height())
-
     def updateSimpleFields(self, *_):
-        """Hide uncommon controls without changing their saved values."""
+        """Keep the original controls visible; optionally show newer scheduling."""
         advanced = self.advanced_toggle.isChecked()
-        basic = {
-            "general": {"record_modes", "wait_before_image"},
-            "repetition": {"repetition_count", "repetition_time_delta", "minimum_duration_hours"},
-        }
-        advanced_sections = {"grid", "position_sequence", "cycles", "calls"}
+        advanced_sections = {"position_sequence", "cycles"}
         active = []
         for section, rows in self.row_widgets.items():
             self.group_boxes[section].setVisible(advanced or section not in advanced_sections)
             for name, (label, field, reset) in rows.items():
-                uncommon = section in advanced_sections or (section in basic and name not in basic[section])
+                uncommon = section in advanced_sections
                 visible = advanced or not uncommon
                 label.setVisible(visible)
                 field.setVisible(visible)
-                reset.setVisible(visible and advanced)
+                reset.setVisible(visible)
                 if uncommon and self.config.has_option(section, name):
                     value, _ = getMeta(self.config.get(section, name))
                     default, _ = getMeta(self.config_default.get(section, name))
@@ -649,7 +632,7 @@ class ConfigEditor(QtWidgets.QWidget):
         duration = self.fields.get("repetition", {}).get("minimum_duration_hours")
         if duration is not None:
             self.fields["repetition"]["repetition_count"].setEnabled(duration.value() == 0)
-        self.advanced_summary.setText("Advanced settings in use: " + "; ".join(active))
+        self.advanced_summary.setText("Additional scheduling in use: " + "; ".join(active))
         self.advanced_summary.setVisible(bool(active) and not advanced)
         self.updateStackFields()
         self.updatePlanStatus()
@@ -851,7 +834,7 @@ class ConfigEditor(QtWidgets.QWidget):
             )
             for widget in widgets[:2]:
                 widget.setVisible(visible)
-            widgets[2].setVisible(visible and self.advanced_toggle.isChecked())
+            widgets[2].setVisible(visible)
             visible_count += int(visible)
         self.group_boxes["stack"].setMinimumHeight(0)
         self.group_boxes["stack"].layout().invalidate()

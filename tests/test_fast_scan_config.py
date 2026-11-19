@@ -273,7 +273,10 @@ def test_simple_view_preserves_advanced_settings_and_text_roundtrip(editor_envir
         editor.fields["repetition"]["repeat_positions_separately"].setChecked(True)
         before = {section: dict(editor.config.items(section)) for section in editor.config.sections()}
         assert editor.group_boxes["cycles"].isHidden()
-        assert editor.Scintilla.isHidden()
+        assert not editor.Scintilla.isHidden()
+        assert not editor.group_boxes["grid"].isHidden()
+        assert not editor.fields["general"]["wait_at_start"].isHidden()
+        assert not editor.fields["repetition"]["repeat_positions_separately"].isHidden()
         assert "5" in editor.advanced_summary.text()
         for visible in (True, False, True, False):
             editor.advanced_toggle.setChecked(visible)
@@ -284,7 +287,6 @@ def test_simple_view_preserves_advanced_settings_and_text_roundtrip(editor_envir
         editor.LoadConfig(str(saved))
         assert editor.fields["cycles"]["cycle_count"].value() == 5
         assert editor.fields["repetition"]["repeat_positions_separately"].isChecked()
-        editor.action_text_editor.setChecked(True)
         assert not editor.Scintilla.isHidden()
     finally:
         editor.close()

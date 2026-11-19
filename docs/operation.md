@@ -5,10 +5,12 @@
 1. Start `start-live-view.bat` in the verified Python environment.
 2. Check focus, illumination and saved XY positions on the actual mounted plate.
 3. Open `start-record.bat`, choose output folder, positions and imaging settings.
-   **Advanced settings** reveals grids, position sequencing, full cycles and per-field
-   reset buttons. **Options** contains presets, route preview, loading/resetting settings
-   and the configuration text editor. Hiding controls never changes their values;
-   a summary reports active advanced settings.
+   Record uses the original two-part layout: settings on the left and editable
+   configuration text on the right, with Cancel, Reset, Load and Save and Start
+   across the top. The divider can be dragged to resize the two parts.
+   **Options** contains presets, route preview and **Show additional scheduling
+   settings** for position sequencing and full cycles. Hiding these settings never
+   changes their values; a summary reports active additional scheduling.
 4. In the stack section choose `projection_mode`: `off` for ordinary images or
    Z-stacks, `default` for the previous projection method, or `optimized` for
    the timed projection workflow.
