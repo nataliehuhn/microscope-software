@@ -2,6 +2,7 @@ from __future__ import division, print_function
 import os
 import sys
 import subprocess
+import math
 
 from qtpy import QtGui, QtCore, QtWidgets
 sys.path.insert(0, os.path.dirname(__file__))
@@ -100,7 +101,7 @@ class ModeDialog(QtWidgets.QDialog):
 
         self.layout.addWidget(QtWidgets.QLabel("Exposure Time (ms)"), 1, 0)
         self.exposure_time = QtWidgets.QSpinBox()
-        self.exposure_time.setRange(1, 1e3)
+        self.exposure_time.setRange(1, 1000)
         self.layout.addWidget(self.exposure_time, 1, 1)
 
         self.layout.addWidget(QtWidgets.QLabel("Gain"), 2, 0)
@@ -176,12 +177,14 @@ class ModeSelector(QtWidgets.QWidget):
 
     def setText(self, text):
         text = text.strip()
-        if text[0] == "[" and text[-1] == "]":
+        if text.startswith("[") and text.endswith("]"):
             text = text[1:-1]
         modes = split_non_excaped(text)
         for button in self.tag_buttons[::-1]:
             self.remove(button, no_signal=1)
         for mode in modes:
+            if not mode:
+                continue
             if mode.startswith("Mode_"):
                 valid = True
                 mode = mode[5:]
@@ -207,14 +210,16 @@ class ModeSelector(QtWidgets.QWidget):
                         values = split_non_excaped(mode_comments)
                         if len(values) <= 2:
                             try:
-                                [int(v) for v in values]
-                                return True
+                                numbers = [float(v) for v in values]
+                                return all(math.isfinite(v) for v in numbers)
                             except:
                                 pass
                 return False
         return False
 
     def text(self):
+        if not self.tags:
+            return "[]"
         return "[Mode_"+", Mode_".join(self.tags)+"]"
 
 
@@ -226,11 +231,11 @@ class PathSelector(QtWidgets.QWidget):
         self.layout.setContentsMargins(0,0,0,0)
 
         self.edit = QtWidgets.QLineEdit(path)
-        self.edit.setDisabled(True)
+        self.edit.setPlaceholderText("Current position" if not folder else "Choose an output folder")
 
         self.layout.addWidget(self.edit)
 
-        self.load_button = QtWidgets.QPushButton("open")
+        self.load_button = QtWidgets.QPushButton("Browse…")
         self.load_button.clicked.connect(self.load)
         self.layout.addWidget(self.load_button)
 
@@ -299,56 +304,42 @@ class ConfigEditor(QtWidgets.QWidget):
 
         # widget layout and elements
         self.options = options
-        self.setWindowTitle("Config")
+        self.setWindowTitle("Record" if options.program else "Recording settings")
         if options.icon:
             self.setWindowIcon(QtGui.QIcon(options.icon))
         layout_vert = QtWidgets.QVBoxLayout(self)
         layout_hor = QtWidgets.QHBoxLayout()
         layout_vert.addLayout(layout_hor)
 
-        self.button_cancel = QtWidgets.QPushButton("Cancel")
-        self.button_cancel.clicked.connect(lambda x: self.close())
-        layout_hor.addWidget(self.button_cancel)
+        self.options_menu = QtWidgets.QMenu(self)
+        self.options_menu.addAction("Load settings…", self.ButtonLoad)
+        self.options_menu.addAction("Restore default settings", lambda: self.LoadConfig(self.options.reset))
+        self.button_options = QtWidgets.QToolButton()
+        self.button_options.setText("Options")
+        self.button_options.setMenu(self.options_menu)
+        self.button_options.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        layout_hor.addWidget(self.button_options)
+        layout_hor.addStretch()
+        self.advanced_toggle = QtWidgets.QCheckBox("Advanced settings")
+        layout_hor.addWidget(self.advanced_toggle)
 
-        self.button_reset = QtWidgets.QPushButton("Reset")
-        self.button_reset.clicked.connect(lambda x: self.LoadConfig(self.options.reset))
-        layout_hor.addWidget(self.button_reset)
-
-        self.button_load = QtWidgets.QPushButton("Load")
-        self.button_load.clicked.connect(self.ButtonLoad)
-        layout_hor.addWidget(self.button_load)
-
-        self.button_save = QtWidgets.QPushButton("Save")
-        if options.program:
-            self.button_save.setText("Save and Start")
-        self.button_save.clicked.connect(self.ButtonSave)
-        layout_hor.addWidget(self.button_save)
-
-        if "position_sequence" in Config(options.template).sections():
-            plan_box = QtWidgets.QGroupBox("Recording plan — choose one")
-            plan_layout = QtWidgets.QVBoxLayout(plan_box)
-            plan_buttons = QtWidgets.QHBoxLayout()
-            self.button_single_position_preset = QtWidgets.QPushButton(
-                "Timed: current position (24 h)"
-            )
-            self.button_single_position_preset.clicked.connect(self.applySinglePositionPreset)
-            plan_buttons.addWidget(self.button_single_position_preset)
-            self.button_timed_saved = QtWidgets.QPushButton("Timed: one saved position")
-            self.button_timed_saved.clicked.connect(self.applyTimedSavedPosition)
-            plan_buttons.addWidget(self.button_timed_saved)
-            self.button_repeated_saved = QtWidgets.QPushButton("Repetitions: saved positions")
-            self.button_repeated_saved.clicked.connect(self.applyRepeatedSavedPositions)
-            plan_buttons.addWidget(self.button_repeated_saved)
-            self.button_repeated_current = QtWidgets.QPushButton("Repetitions: current position")
-            self.button_repeated_current.clicked.connect(self.applyRepeatedCurrentPosition)
-            plan_buttons.addWidget(self.button_repeated_current)
-            plan_layout.addLayout(plan_buttons)
-            self.plan_status = QtWidgets.QLabel()
-            plan_layout.addWidget(self.plan_status)
-            layout_vert.addWidget(plan_box)
+        self.plan_status = QtWidgets.QLabel()
+        layout_vert.addWidget(self.plan_status)
+        self.advanced_summary = QtWidgets.QLabel()
+        self.advanced_summary.setWordWrap(True)
+        layout_vert.addWidget(self.advanced_summary)
 
         layout_content = QtWidgets.QHBoxLayout()
         layout_vert.addLayout(layout_content)
+        footer = QtWidgets.QHBoxLayout()
+        layout_vert.addLayout(footer)
+        footer.addStretch()
+        self.button_cancel = QtWidgets.QPushButton("Close")
+        self.button_cancel.clicked.connect(self.close)
+        footer.addWidget(self.button_cancel)
+        self.button_save = QtWidgets.QPushButton("Save and Start" if options.program else "Save settings…")
+        self.button_save.clicked.connect(self.ButtonSave)
+        footer.addWidget(self.button_save)
 
         self.form_scroll = QtWidgets.QScrollArea()
         self.form_scroll.setWidgetResizable(True)
@@ -364,11 +355,13 @@ class ConfigEditor(QtWidgets.QWidget):
         self.group_boxes = {}
         self.row_widgets = {}
         for section in self.config_default.sections():
-            box = QtWidgets.QGroupBox(section)
+            box = QtWidgets.QGroupBox({"general": "Imaging", "files": "Files and positions",
+                                      "stack": "Z scan", "repetition": "Repetitions",
+                                      "position_sequence": "Position sequence", "cycles": "Full cycles"}
+                                     .get(section, section.title()))
             box.setFlat(True)
             box_layout = QtWidgets.QGridLayout()
             items = self.config_default.items(section)
-            box.setMinimumHeight(len(items)*25+30+10)
             self.fields[section] = {}
             self.meta[section] = {}
             self.row_widgets[section] = {}
@@ -380,7 +373,17 @@ class ConfigEditor(QtWidgets.QWidget):
                 name, value = item
                 value, meta = getMeta(value)
                 self.meta[section][name] = meta
-                label = QtWidgets.QLabel(meta.get("label", name))
+                simple_labels = {
+                    "record_modes": "Imaging modes", "wait_before_image": "Settle before image",
+                    "wait_at_start": "Start delay", "positions_filename": "Positions file",
+                    "target_folder": "Output folder", "slice_thickness": "Slice spacing",
+                    "slice_start": "First slice", "slice_stop": "Last slice",
+                    "minimum_duration_hours": "Duration (0 = count)",
+                    "repetition_count": "Repetitions", "repetition_time_delta": "Interval between starts",
+                    "repeat_positions_separately": "Repeat each position first",
+                    "roi": "Image height (ROI)", "binning": "Pixel binning",
+                }
+                label = QtWidgets.QLabel(meta.get("label", simple_labels.get(name, name.replace("_", " ").capitalize())))
                 box_layout.addWidget(label, index, 0)
                 if meta["type"] == "int":
                     edit_field = QtWidgets.QSpinBox()
@@ -407,7 +410,6 @@ class ConfigEditor(QtWidgets.QWidget):
                     if "unit" in meta:
                         edit_field.setSuffix(" "+meta["unit"])
                 elif meta["type"] == "bool":
-                    value = value == "True"
                     edit_field = QtWidgets.QCheckBox()
                     edit_field.setChecked(value)
                     edit_field.stateChanged.connect(lambda value, section=section, name=name: self.changed(section, name, "True" if value else "False"))
@@ -464,22 +466,25 @@ class ConfigEditor(QtWidgets.QWidget):
                 box.resizeEvent = lambda event, button2=button2, box=box: button2.move(box.width()-button2.width(), 0)
                 button2.setToolTip(tooltip)
 
+        layout_gui.addStretch()
         if "position_sequence" in self.fields:
-            self.button_single_position_preset.setToolTip(
+            self.options_menu.addSeparator()
+            presets = self.options_menu.addMenu("Presets")
+            self.action_single_position_preset = presets.addAction("Single position, 24 h", self.applySinglePositionPreset)
+            self.action_single_position_preset.setToolTip(
                 "Use the current microscope position for at least 24 hours. "
                 "Keeps the selected mode and Z scan settings; adjust the duration and interval below. "
                 "To use a saved position, select a file containing exactly one position afterward."
             )
-            self.button_assay_preset = QtWidgets.QPushButton("Migration assay preset")
-            self.button_assay_preset.setToolTip(
+            self.action_timed_saved = presets.addAction("Timed: one saved position", self.applyTimedSavedPosition)
+            self.action_repeated_saved = presets.addAction("Repetitions: saved positions", self.applyRepeatedSavedPositions)
+            self.action_repeated_current = presets.addAction("Repetitions: current position", self.applyRepeatedCurrentPosition)
+            self.action_assay_preset = presets.addAction("Migration assay", self.applyAssayPreset)
+            self.action_assay_preset.setToolTip(
                 "5 positions per condition; 22 optimized projections at 15 s; "
                 "5 full cycles every 3 h. Keeps your files, modes, and Z scan settings."
             )
-            self.button_assay_preset.clicked.connect(self.applyAssayPreset)
-            layout_hor.addWidget(self.button_assay_preset)
-            self.button_preview_sequence = QtWidgets.QPushButton("Preview route")
-            self.button_preview_sequence.clicked.connect(self.previewSequence)
-            layout_hor.addWidget(self.button_preview_sequence)
+            self.options_menu.addAction("Preview route…", self.previewSequence)
 
         if qsci_loaded:
             self.Scintilla = Qsci.QsciScintilla()
@@ -490,8 +495,16 @@ class ConfigEditor(QtWidgets.QWidget):
         self.Scintilla.setMinimumWidth(400)
 
         self.no_update = False
+        self.config_error = None
+        self.invalid_fields = set()
         self.Scintilla.textChanged.connect(self.EditorTextChanged)
         layout_content.addWidget(self.Scintilla)
+        self.Scintilla.hide()
+        self.options_menu.addSeparator()
+        self.action_text_editor = self.options_menu.addAction("Edit configuration text")
+        self.action_text_editor.setCheckable(True)
+        self.action_text_editor.toggled.connect(self.showTextEditor)
+        self.advanced_toggle.toggled.connect(self.updateSimpleFields)
 
         self.config = Config()
         print("Load config")
@@ -509,34 +522,35 @@ class ConfigEditor(QtWidgets.QWidget):
                 self.updateSequenceFields
             )
         self.updateSequenceFields()
-        self.updatePlanStatus()
+        self.updateSimpleFields()
         self.move(0, 0)
         
         # center window in desktop
         DRect = QtWidgets.QDesktopWidget().screenGeometry()
-        self.resize(min(1150, DRect.width() - 80), min(850, DRect.height() - 80))
+        self.resize(min(680, DRect.width() - 80), min(800, DRect.height() - 80))
         WRect = self.geometry()
         self.move((DRect.width()-WRect.width())//2, (DRect.height()-WRect.height())//4)
 
     def LoadConfig(self, path, editor_update=True):
         in_group = False
-        with open("temp_config.txt", "w") as fp2:
-            with open(path, "r") as fp:
-                for line in fp:
-                    if line.startswith("["):
-                        if not line.startswith("[dynamic]"):
-                            in_group = True
-                        else:
-                            in_group = False
-                    if in_group is True:
-                        fp2.write(line)
+        lines = []
+        with open(path, "r") as fp:
+            for line in fp:
+                if line.startswith("["):
+                    in_group = not line.startswith("[dynamic]")
+                if in_group:
+                    lines.append(line)
+        text = "".join(lines)
+        candidate = ConfigParser.RawConfigParser()
+        candidate.read_string(text)
 
         self.no_update = True
         try:
             if editor_update:
-                self.Scintilla.setText(open("temp_config.txt").read())
-            self.config = ConfigParser.RawConfigParser()
-            self.config.read("temp_config.txt")
+                self.Scintilla.setText(text)
+            self.config = candidate
+            self.config_error = None
+            self.invalid_fields.clear()
             for section in self.fields:
                 if not section in self.config.sections():
                     self.config.add_section(section)
@@ -570,6 +584,7 @@ class ConfigEditor(QtWidgets.QWidget):
                         self.config.set(section, key, value)
                     field = self.fields[section][key]
                     meta = self.meta[section][key]
+                    self.config.set(section, key, str(value))
                     field.setStyleSheet("")
                     try:
                         if meta["type"] == "int" or meta["type"] == "float":
@@ -577,6 +592,8 @@ class ConfigEditor(QtWidgets.QWidget):
                             if meta["type"] == "int" and isinstance(value, float):
                                 raise ValueError
                             if "min" in meta and value < float(meta["min"]):
+                                raise ValueError
+                            if value < field.minimum() or value > field.maximum():
                                 raise ValueError
                         elif meta["type"] == "bool":
                             self.fields[section][key].setChecked(value)
@@ -588,6 +605,7 @@ class ConfigEditor(QtWidgets.QWidget):
                         else:
                             self.fields[section][key].setText(value)
                     except:
+                        self.invalid_fields.add((section, key))
                         self.fields[section][key].setStyleSheet("background-color: #FDD;")
             if "projection_mode" in self.fields.get("stack", {}):
                 self.config.remove_option("stack", "projection")
@@ -599,6 +617,41 @@ class ConfigEditor(QtWidgets.QWidget):
         if "stack" in self.fields:
             self.updateStackFields()
         self.updateSequenceFields()
+        self.updateSimpleFields()
+
+    def showTextEditor(self, visible):
+        self.Scintilla.setVisible(visible)
+        width = 1100 if visible else 680
+        self.resize(min(width, QtWidgets.QDesktopWidget().screenGeometry().width() - 80), self.height())
+
+    def updateSimpleFields(self, *_):
+        """Hide uncommon controls without changing their saved values."""
+        advanced = self.advanced_toggle.isChecked()
+        basic = {
+            "general": {"record_modes", "wait_before_image"},
+            "repetition": {"repetition_count", "repetition_time_delta", "minimum_duration_hours"},
+        }
+        advanced_sections = {"grid", "position_sequence", "cycles", "calls"}
+        active = []
+        for section, rows in self.row_widgets.items():
+            self.group_boxes[section].setVisible(advanced or section not in advanced_sections)
+            for name, (label, field, reset) in rows.items():
+                uncommon = section in advanced_sections or (section in basic and name not in basic[section])
+                visible = advanced or not uncommon
+                label.setVisible(visible)
+                field.setVisible(visible)
+                reset.setVisible(visible and advanced)
+                if uncommon and self.config.has_option(section, name):
+                    value, _ = getMeta(self.config.get(section, name))
+                    default, _ = getMeta(self.config_default.get(section, name))
+                    if value != default:
+                        active.append("{}: {}".format(label.text(), value))
+        duration = self.fields.get("repetition", {}).get("minimum_duration_hours")
+        if duration is not None:
+            self.fields["repetition"]["repetition_count"].setEnabled(duration.value() == 0)
+        self.advanced_summary.setText("Advanced settings in use: " + "; ".join(active))
+        self.advanced_summary.setVisible(bool(active) and not advanced)
+        self.updateStackFields()
         self.updatePlanStatus()
 
     def updateSequenceFields(self, *_):
@@ -663,7 +716,6 @@ class ConfigEditor(QtWidgets.QWidget):
             else:
                 field.setText(value)
         self.updateSequenceFields()
-        self.updatePlanStatus()
 
     def applyTimedSavedPosition(self):
         """Use elapsed time with exactly one position from a saved file."""
@@ -797,10 +849,11 @@ class ConfigEditor(QtWidgets.QWidget):
                 or (name in legacy_fields and mode != "optimized")
                 or (name in optimized_fields and mode == "optimized")
             )
-            for widget in widgets:
+            for widget in widgets[:2]:
                 widget.setVisible(visible)
+            widgets[2].setVisible(visible and self.advanced_toggle.isChecked())
             visible_count += int(visible)
-        self.group_boxes["stack"].setMinimumHeight(visible_count * 25 + 40)
+        self.group_boxes["stack"].setMinimumHeight(0)
         self.group_boxes["stack"].layout().invalidate()
 
     def ButtonLoad(self):
@@ -815,24 +868,20 @@ class ConfigEditor(QtWidgets.QWidget):
 
     def ButtonSave(self):
         print("saving config")
+        try:
+            if self.config_error:
+                raise ValueError("Finish editing the configuration text: " + self.config_error)
+            if self.invalid_fields:
+                raise ValueError("Correct the highlighted settings: " + ", ".join(
+                    "{}.{}".format(*key) for key in sorted(self.invalid_fields)))
+            self.validateRecordingPlan()
+        except (OSError, ValueError, ConfigParser.Error) as error:
+            QtWidgets.QMessageBox.warning(self, "Check recording settings", str(error))
+            return
         if self.options.program:
             if "position_sequence" in self.fields:
                 try:
                     self.sequencePreviewData()
-                    duration_hours = float(self.config.get(
-                        "repetition", "minimum_duration_hours", fallback="0"
-                    ))
-                    filename, _ = getMeta(self.config.get("files", "positions_filename"))
-                    if duration_hours > 0 and filename and filename != "None":
-                        from leica_microscope.recording_sequence import load_sequence_positions
-                        position_count = len(load_sequence_positions(filename))
-                        if position_count != 1:
-                            raise ValueError(
-                                "Duration recording found {} saved positions. "
-                                "To scan the current stage position, set Positions filename "
-                                "to None. To scan a saved position, select a file with "
-                                "exactly one position.".format(position_count)
-                            )
                 except (OSError, ValueError) as error:
                     QtWidgets.QMessageBox.warning(self, "Check recording sequence", str(error))
                     return
@@ -853,23 +902,53 @@ class ConfigEditor(QtWidgets.QWidget):
                 with open(path, "w") as fp:
                     self.config.write(fp)
 
+    def validateRecordingPlan(self):
+        if "position_sequence" not in self.fields:
+            return
+        settings, rows = self.sequencePreviewData()
+        modes = self.fields["general"]["record_modes"]
+        if not modes.tags or not all(modes.CheckIfModeIsValid(mode) for mode in modes.tags):
+            raise ValueError("Choose at least one valid imaging mode.")
+        duration = self.fields["repetition"]["minimum_duration_hours"].value()
+        if duration > 0:
+            if len(rows) > 1:
+                raise ValueError("Duration recording found {} saved positions; it needs exactly one saved position. Clear the positions file to use the current stage position.".format(len(rows)))
+            if len(modes.tags) != 1 or settings.cycle_count != 1 or any(
+                    self.fields["grid"][name].value() != 1 for name in ("countx", "county")):
+                raise ValueError("Duration recording needs one imaging mode, a 1 x 1 grid and one full cycle.")
+        stack = self.fields["stack"]
+        if self.fields["repetition"]["repetition_time_delta"].value() < 0:
+            raise ValueError("The interval between starts must be nonnegative.")
+        if stack["projection_mode"].currentData() == "default" and stack["slice_start"].value() == stack["slice_stop"].value():
+            raise ValueError("A projection needs different first and last Z slices.")
+        if stack["projection_mode"].currentData() == "optimized" and stack["projection_start_um"].value() == stack["projection_stop_um"].value():
+            raise ValueError("An optimized projection needs different start and stop Z offsets.")
+
     def EditorTextChanged(self):
+        if self.no_update:
+            return
         with open(tmp_config, 'w') as fp:
             fp.write(self.Scintilla.text())
-        if not self.no_update:
+        try:
             self.LoadConfig(tmp_config, editor_update=False)
+        except (ConfigParser.Error, ValueError, TypeError) as error:
+            self.config_error = str(error)
+            self.Scintilla.setToolTip("Incomplete configuration: " + str(error))
 
     def changed(self, section, name, value):
+        if self.no_update:
+            return
         meta = self.meta[section][name]
         field = self.fields[section][name]
         if "unit_plus" in meta and value >= 0:
             field.setSuffix(" "+meta["unit_plus"])
         if "unit_minus" in meta and value < 0:
             field.setSuffix(" "+meta["unit_minus"])
-        self.config.set(section, name, value)
-        if (section, name) in (("files", "positions_filename"),
-                               ("repetition", "minimum_duration_hours")):
-            self.updatePlanStatus()
+        if meta["type"] in ("file", "folder") and not str(value).strip():
+            value = "None"
+        self.config.set(section, name, str(value))
+        self.invalid_fields.discard((section, name))
+        field.setStyleSheet("")
 
         if not self.no_update:
             self.no_update = True
@@ -877,6 +956,8 @@ class ConfigEditor(QtWidgets.QWidget):
                 self.config.write(fp)
             self.Scintilla.setText(open(tmp_config).read())
             self.no_update = False
+            self.config_error = None
+            self.updateSimpleFields()
 
     def reset(self, section, name):
         value, _ = getMeta(self.config_default.get(section, name))
@@ -884,7 +965,7 @@ class ConfigEditor(QtWidgets.QWidget):
         if isinstance(field, QtWidgets.QSpinBox) or isinstance(field, QtWidgets.QDoubleSpinBox):
             field.setValue(value)
         elif isinstance(field, QtWidgets.QCheckBox):
-            field.setChecked(value == "True")
+            field.setChecked(bool(value))
         elif isinstance(field, QtWidgets.QComboBox):
             selected = field.findData(value)
             if selected < 0:

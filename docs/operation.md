@@ -5,22 +5,25 @@
 1. Start `start-live-view.bat` in the verified Python environment.
 2. Check focus, illumination and saved XY positions on the actual mounted plate.
 3. Open `start-record.bat`, choose output folder, positions and imaging settings.
+   **Advanced settings** reveals grids, sequencing, cycles and individual reset buttons.
+   **Options** contains presets, route preview, loading/resetting settings and the text
+   editor. Hiding settings preserves all their values; active extras appear in a summary.
 4. In the stack section choose `projection_mode`: `off` for ordinary images or
    Z-stacks, `default` for the previous projection method, or `optimized` for
    the timed projection workflow.
 5. For optimized mode enter `projection_start_um`, `projection_stop_um` and
    `projection_time_s`, then use **Save and Start** when ready for acquisition.
 
-At the top of Record, choose a **Recording plan**:
+Choose a recording preset under **Options > Presets**:
 
-- **Timed: current position (24 h)** clears the positions file and starts at the
+- **Single position, 24 h** clears the positions file and starts at the
   current stage position. Change `minimum_duration_hours` for another duration.
 - **Timed: one saved position** uses a positions file containing exactly one row.
 - **Repetitions: saved positions** uses the saved route and `repetition_count`.
   This exits timed mode by setting `minimum_duration_hours` to `0`.
 - **Repetitions: current position** uses `repetition_count` without a positions file.
 
-The status line below the buttons shows the current plan. These buttons keep the
+The status line shows the current plan. These presets keep the
 selected imaging mode and Z scan settings. Review the duration or repetition
 count, interval, positions file and target folder before starting.
 
@@ -98,3 +101,24 @@ maintenance operation, with the original process-reset behaviour.
 The fluorescence group protocol (`MigAssay_FluoGroups.py`), Basler gain control,
 per-channel exposure memory and streamer startup fixes from the fluorescence
 installation are included. Mic2 retains its own Z model and stage coordinates.
+
+
+## Recording interruptions and original applications
+
+Both serial command paths assemble complete CR-terminated replies before parsing,
+ignore malformed frames within their timeout, and report missing replies clearly.
+Repeated replies do not count as answers to other commands. Stage motion commands
+are never resent automatically after a timeout.
+
+Recoverable camera failures skip the affected acquisition after cleanup and log the
+missing filename in `acquisition_warnings.jsonl`; later scheduled acquisitions
+continue. Completed images with timing/coverage or dropped-frame issues are saved
+with quality warnings in TIFF metadata. Invalid geometry, controller/cleanup
+failures, disk errors and operator interruption still stop recording. These checks
+cannot guarantee uninterrupted operation if hardware or storage fails.
+
+**LiveViewer old** and **Record old** launch the preserved original installation,
+using monochrome desktop icons. The original Record uses `Config-old.txt` so its
+settings do not replace the current app's `Config.txt`. The original code does not
+include the newer recovery fixes. `tools/install_legacy_shortcuts.ps1` recreates
+these shortcuts for a verified original installation and interpreter.

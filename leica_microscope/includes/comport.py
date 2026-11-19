@@ -3,6 +3,10 @@ import serial
 import sys
 import glob
 import time
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -153,6 +157,40 @@ class ComError(MicroscopeError):
     pass
 
 
+class _ReplyReader:
+    """Assemble bounded CR-terminated replies across serial read timeouts."""
+
+    def __init__(self, port):
+        self.port = port
+        self.pending = b""
+        self.discarding = False
+
+    def read(self, ser):
+        self.pending += ser.read_until(b"\r")
+        lines = []
+        while b"\r" in self.pending:
+            frame, self.pending = self.pending.split(b"\r", 1)
+            if self.discarding or len(frame) > 4096:
+                self.discarding = False
+                logger.warning("Discarding oversized serial reply on %s", self.port)
+                continue
+            try:
+                line = frame.decode("ascii").strip()
+            except UnicodeDecodeError:
+                logger.warning("Discarding non-ASCII serial reply on %s: %r", self.port, frame)
+                continue
+            if not line:
+                continue
+            if len(line) < 5 or not line[:5].isdigit():
+                logger.warning("Discarding malformed serial reply on %s: %r", self.port, line)
+                continue
+            lines.append(line)
+        if len(self.pending) > 4096:
+            self.pending = b""
+            self.discarding = True
+        return lines
+
+
 class PersistentCommandSession:
     """Reuse one serial connection for low-latency repeated read commands."""
 
@@ -179,13 +217,9 @@ class PersistentCommandSession:
         expected_device, _, expected_command, _ = split_code(command)
         self.ser.write(command)
         deadline = time.perf_counter() + timeout
+        reader = _ReplyReader(self.port)
         while time.perf_counter() < deadline:
-            raw = self.ser.read_until(b"\r")
-            if not raw:
-                continue
-            for line in raw.decode("utf-8").split("\r"):
-                if not line.strip():
-                    continue
+            for line in reader.read(self.ser):
                 device, error, response_command, parameters = split_code(line)
                 if device != expected_device or response_command != expected_command:
                     continue
@@ -211,8 +245,14 @@ class PersistentCommandSession:
                     )
                 if not parameters.strip() and output_format is not None:
                     continue
-                return apply_format(parameters.strip(), output_format)
-        raise TimeoutError("Timed out waiting for {}".format(command.strip()))
+                try:
+                    return apply_format(parameters.strip(), output_format)
+                except ValueError:
+                    logger.warning("Discarding invalid serial parameters on %s: %r", self.port, line)
+        raise TimeoutError(
+            "Timed out waiting for a complete valid reply to {} on {} (partial={!r})"
+            .format(command.strip(), self.port, reader.pending[:80])
+        )
 
     def send(self, command):
         """Send a command without waiting, reusing the open serial session."""
@@ -221,101 +261,70 @@ class PersistentCommandSession:
         self.ser.write(command)
 
 def send_command_and_wait(command_list, port, output_format=None, verbose=False, wait=True):
-    single_command = False
-
-    if not isinstance(command_list, (list, tuple)):
+    single_command = not isinstance(command_list, (list, tuple))
+    if single_command:
         command_list = [command_list]
-        if output_format is None:
-            output_format = [None]
-        else:
-            output_format = [output_format]
-        single_command = True
-
+        output_format = [output_format]
     if output_format is None:
         output_format = [None] * len(command_list)
-
-    # ensure that all commands end with \r
-    for i in range(len(command_list)):
-        if command_list[i][-1] != "\r":
-            command_list[i] += "\r"
-
-    # the part before the first space is the command code, the rest are the paremeters
+    # Do not mutate callers' lists; tuples are supported as well.
+    command_list = [command.rstrip("\r") + "\r" for command in command_list]
+    if len(output_format) != len(command_list):
+        raise ValueError("Each serial command needs one output format")
+    if not command_list:
+        return []
     command_codes = [split_code(command) for command in command_list]
-
-    commands_answered = 0
     answers = [None] * len(command_list)
-
-    while True:
-        # open the connection
-        with Connection(port) as ser:
-            # log
-            if verbose: print("Commands:", [c.strip() for c in command_list])
-            # write the command to the port
-            for command in command_list:
-                ser.write(command)
-            if wait is False:
-                return
-            # remember start time
-            start_time = time.time()
-            while time.time() - start_time < 5:
-                # read the line
-                line = ser.readline()
-                # if the answer is empty, ignore it
-                if line.strip() == "":
-                    continue
-                #
-                lines = line.split("\r")
-                for line in lines:
-                    if line.strip() == "":
+    answered = set()
+    reader = _ReplyReader(port)
+    with Connection(port) as ser:
+        if verbose:
+            print("Commands:", [c.strip() for c in command_list])
+        for command in command_list:
+            ser.write(command)
+        if not wait:
+            return
+        deadline = time.perf_counter() + 5.0
+        while time.perf_counter() < deadline:
+            for line in reader.read(ser):
+                if verbose:
+                    print("Response:", line)
+                device, error, cmd, parameters = split_code(line)
+                if error == "9" and cmd in ("99", "98", "97"):
+                    error_type = {"99": ComError, "98": IdError, "97": FuiError}[cmd]
+                    raise error_type("Controller error: " + line, device, error, cmd, parameters)
+                for i, (expected_device, _, expected_cmd, _) in enumerate(command_codes):
+                    if i in answered or device != expected_device or cmd != expected_cmd:
                         continue
-                    if verbose: print("Response:", line)
-                    device, error, cmd, parameters = split_code(line)
-                    if error == "9":
-                        if cmd == "99":
-                            raise ComError(
-                                f"COM_ERR occurred for command {line}", device, error, cmd, parameters)
-                        if cmd == "98":
-                            raise IdError(
-                                f"ID_ERR occurred for command {line}", device, error, cmd, parameters)
-                        if cmd == "97":
-                            raise FuiError(
-                                f"FUI_ERR occurred for command {line}", device, error, cmd, parameters)
-                    for i in range(len(command_list)):
-                        if device == command_codes[i][0] and cmd == command_codes[i][2] \
-                                and ((device != "76" or cmd != "33") or (device == "76" and cmd == "33" and (line[6:9] == command_list[i][6:9] or (command_list[i][6] == "a" and line[8] == command_list[i][8]))))\
-                                and ((device != "78" or cmd != "27") or (device == "78" and cmd == "27" and line[6:7] == command_list[i][6:7]))\
-                                :
-                            if error != "0":
-                                if error == "1":
-                                    raise ParError(f"PAR_ERR: wrong parameters supplied for command {command_list[i]}", device, error, cmd, parameters)
-                                if error == "2":
-                                    raise SequenceError(f"SEQUENCE_ERR occurred for command {command_list[i]}", device, error, cmd, parameters)
-                                if error == "3":
-                                    raise FlowError(f"FLOW_ERR occurred for command {command_list[i]}", device, error, cmd, parameters)
-                                if error == "9":
-                                    raise UncError(f"UNC_ERR occurred for command {command_list[i]}", device, error, cmd, parameters)
-                            try:
-                                answers[i] = apply_format(parameters.strip(), output_format[i])
-                            except ValueError:
-                                raise ValueError(f"Tried to format answer '{line}' to format {output_format[i]}")
-                            commands_answered += 1
-                            if verbose: print(commands_answered, len(answers))
-                            if commands_answered == len(answers):
-                                if single_command:
-                                    return answers[0]
-                                return answers
-                            break
-
-            #print("Timout try to reset the microscope")
-            #ser.write("70007")
-            #time.sleep(2)
-            #continue
-            break
-        if verbose: print("timeout")
-
-        if single_command:
-            return answers[0]
-        return answers
+                    if device == "76" and cmd == "33":
+                        # Objective property replies include objective and property IDs.
+                        if len(line) < 9 or len(command_list[i]) < 9:
+                            continue
+                        if not (line[6:9] == command_list[i][6:9] or
+                                (command_list[i][6] == "a" and line[8] == command_list[i][8])):
+                            continue
+                    if device == "78" and cmd == "27" and line[6:7] != command_list[i][6:7]:
+                        continue
+                    if error != "0":
+                        error_type = {"1": ParError, "2": SequenceError,
+                                      "3": FlowError, "9": UncError}.get(error, MicroscopeError)
+                        raise error_type("Controller error for {}: {}".format(command_list[i].strip(), line),
+                                         device, error, cmd, parameters)
+                    if output_format[i] is not None and not parameters.strip():
+                        continue
+                    try:
+                        value = apply_format(parameters.strip(), output_format[i])
+                    except ValueError:
+                        logger.warning("Discarding invalid serial parameters on %s: %r", port, line)
+                        continue
+                    answers[i] = value
+                    answered.add(i)
+                    if len(answered) == len(command_list):
+                        return answers[0] if single_command else answers
+                    break
+    missing = [command.strip() for i, command in enumerate(command_list) if i not in answered]
+    raise TimeoutError("Timed out waiting for complete valid replies on {}: {} (partial={!r})"
+                       .format(port, ", ".join(missing), reader.pending[:80]))
 
 
 def send_command(command, port):

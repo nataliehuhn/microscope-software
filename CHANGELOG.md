@@ -1,5 +1,11 @@
 # Change log
 
+## 2026-11-19 - Simpler Record and complete serial replies
+
+- Synchronize the simpler Record interface and framing fixes with Mic3.
+- Retain existing Mic2 camera recovery, hardware settings and calibration.
+- Add original-app desktop launchers with independent settings and monochrome icons.
+
 ## 2026-10-28 — Repository organization
 
 - Imported Mic2's current working source, preserving upstream history.
