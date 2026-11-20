@@ -5,7 +5,17 @@ from leica_microscope.microscope import Microscope
 
 
 class ProjectionDispatchTests(unittest.TestCase):
-    def test_default_projection_uses_preaccelerated_recorder(self):
+    def test_default_projection_uses_original_stack_recorder(self):
+        microscope = Microscope.__new__(Microscope)
+        microscope.rec_preaccelerated_projection = Mock()
+        microscope.rec_stack = Mock(return_value="original")
+        result = microscope.rec_projection("projection_{z}.tif", 0, 100, 10.0)
+        self.assertEqual(result, "original")
+        microscope.rec_stack.assert_called_once_with(
+            "projection_{z}.tif", 0, 100, 10.0, True, True)
+        microscope.rec_preaccelerated_projection.assert_not_called()
+
+    def test_explicit_frame_requirement_keeps_preaccelerated_recorder(self):
         microscope = Microscope.__new__(Microscope)
         microscope.rec_preaccelerated_projection = Mock(return_value={"ok": True})
         microscope.rec_stack = Mock()
@@ -15,6 +25,7 @@ class ProjectionDispatchTests(unittest.TestCase):
             n_below=0,
             n_above=10,
             slice_thickness_um=2.0,
+            minimum_frames=100,
         )
 
         self.assertEqual(result, {"ok": True})
@@ -23,7 +34,7 @@ class ProjectionDispatchTests(unittest.TestCase):
             n_below=0,
             n_above=10,
             slice_thickness_um=2.0,
-            minimum_frames=None,
+            minimum_frames=100,
             camera_margin_frames=4,
         )
         microscope.rec_stack.assert_not_called()

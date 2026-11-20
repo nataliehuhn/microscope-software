@@ -86,8 +86,25 @@ class Camera(CameraBase):
     def getVideoBuffer(self, count) -> np.ndarray:
         return np.zeros([count, self.getHeight(), self.getWidth()], dtype=self.getDtype())
 
+    @recover_camera_capture
     def getVideo(self, buffer):
-        self.getVideoWithTimestamps(buffer)
+        """Original pixel-only burst; normal stacks do not need timestamp data."""
+        try:
+            self.camera.StartGrabbingMax(buffer.shape[0])
+            for i in range(buffer.shape[0]):
+                result = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+                try:
+                    if not result.GrabSucceeded():
+                        raise RecoverableAcquisitionError(
+                            "Basler failed to grab stack frame {}".format(i))
+                    image = result.Array
+                    if self.config["flip_y"]:
+                        image = image[::-1]
+                    buffer[i] = image
+                finally:
+                    result.Release()
+        finally:
+            self._stop_capture()
         return buffer
 
     @recover_camera_capture

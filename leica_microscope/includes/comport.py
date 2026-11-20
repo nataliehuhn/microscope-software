@@ -322,7 +322,15 @@ def send_command_and_wait(command_list, port, output_format=None, verbose=False,
                     if len(answered) == len(command_list):
                         return answers[0] if single_command else answers
                     break
-    missing = [command.strip() for i, command in enumerate(command_list) if i not in answered]
+    missing_indices = [i for i in range(len(command_list)) if i not in answered]
+    missing = [command_list[i].strip() for i in missing_indices]
+    if all(output_format[i] is None for i in missing_indices):
+        # Original setters returned after the acknowledgement timeout. Keep
+        # that behavior: callers still perform their normal movement/status
+        # checks. Never replay a state-changing command because its ACK was lost.
+        logger.warning("Missing command acknowledgement on %s: %s; continuing with normal status checks",
+                       port, ", ".join(missing))
+        return answers[0] if single_command else answers
     raise TimeoutError("Timed out waiting for complete valid replies on {}: {} (partial={!r})"
                        .format(port, ", ".join(missing), reader.pending[:80]))
 

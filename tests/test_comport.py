@@ -110,15 +110,22 @@ def test_legacy_objective_queries_match_property_without_short_line_crash():
     assert result == [20, 0.4]
 
 
-def test_legacy_motion_is_not_resent_on_timeout():
+def test_legacy_missing_ack_keeps_original_behavior_without_resending(caplog):
     from leica_microscope.includes.comport import send_command_and_wait
     ser = FragmentedSerial([])
     with patch("leica_microscope.includes.comport.Connection") as connection, \
             patch("leica_microscope.includes.comport.time.perf_counter", side_effect=lambda: ser.clock):
         connection.return_value.__enter__.return_value = ser
-        with pytest.raises(TimeoutError):
-            send_command_and_wait("71022 100", "SIMULATED")
+        assert send_command_and_wait("71022 100", "SIMULATED") is None
     assert ser.writes == ["71022 100\r"]
+    assert "Missing command acknowledgement" in caplog.text
+
+
+def test_missing_ack_does_not_discard_a_valid_read_in_mixed_batch():
+    result, writes = legacy_query([b"71023 100\r"],
+                                  ["71032 200", "71023"], [None, int])
+    assert result == [None, 100]
+    assert writes == ["71032 200\r", "71023\r"]
 
 
 def test_legacy_no_wait_and_controller_error_preserved():
