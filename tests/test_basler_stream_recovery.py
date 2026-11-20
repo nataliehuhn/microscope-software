@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from unittest.mock import Mock
 
 from leica_microscope.camera_basler import Camera, genicam
 from leica_microscope.recording_resilience import RecoverableAcquisitionError
@@ -131,3 +132,27 @@ def test_single_image_releases_driver_buffer_and_returns_owned_pixels():
     cam.camera.GrabOne = lambda timeout: result
     image = cam.getImage()
     assert result.released and np.all(image == 7)
+
+
+def test_ordinary_burst_does_not_require_optional_timestamps_or_rate():
+    results = [Result(i + 1) for i in range(3)]
+    cam = camera_with_results(results)
+    cam.camera.StartGrabbingMax = Mock()
+    cam.getFramerate = Mock(side_effect=AssertionError("no rate query needed"))
+    for result in results:
+        result.GetTimeStamp = Mock(side_effect=AssertionError("no timestamp needed"))
+        result.Array = np.arange(12, dtype=np.uint8).reshape(3, 4) + result.block_id
+    expected = np.stack([r.Array[::-1].copy() for r in results])
+    buffer = np.zeros_like(expected)
+    assert cam.getVideo(buffer) is buffer
+    np.testing.assert_array_equal(buffer, expected)
+    assert all(r.released for r in results) and cam.camera.stopped
+
+
+def test_ordinary_failed_burst_cleans_up_before_recovery():
+    failed = Result(1, failed=True)
+    cam = camera_with_results([failed])
+    cam.camera.StartGrabbingMax = Mock()
+    with pytest.raises(RecoverableAcquisitionError, match="stack frame"):
+        cam.getVideo(np.zeros((1, 3, 4), np.uint8))
+    assert failed.released and cam.camera.stopped

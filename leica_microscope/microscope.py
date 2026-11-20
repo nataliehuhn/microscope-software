@@ -988,10 +988,11 @@ class Microscope:
             save_projection: bool = True, minimum_frames: int = None,
             camera_margin_frames: int = 4):
         """
-        Record a projection with the persistent pre-accelerated method.
+        Record a projection using the original continuous-stack path by default.
 
-        Passing non-default ``fast_recording`` or ``save_projection`` options
-        retains the legacy ``rec_stack`` behavior for compatibility.
+        Pre-accelerated recording is opt-in through its dedicated method or an
+        explicit ``minimum_frames``/``camera_margin_frames`` override. Ordinary
+        Record scripts do not require a velocity model or position polling.
 
         Args:
             filename(str): the filename where to save the images. It needs to contain {z} which will be replaced by the
@@ -1002,7 +1003,8 @@ class Microscope:
             fast_recording: Whether to use fast recording (True) or precise recording (False).
             save_projection: Whether to save the projections (True) or the single images (False).
         """
-        if fast_recording and save_projection:
+        if (fast_recording and save_projection
+                and (minimum_frames is not None or camera_margin_frames != 4)):
             return self.rec_preaccelerated_projection(
                 filename,
                 n_below=n_below,

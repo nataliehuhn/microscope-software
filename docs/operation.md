@@ -17,6 +17,13 @@
 5. For optimized mode enter `projection_start_um`, `projection_stop_um` and
    `projection_time_s`, then use **Save and Start** when ready for acquisition.
 
+Normal (`default`) projections use the original continuous stack and pixel-only
+camera burst. They do not require the pre-acceleration model, timestamp chunks,
+or repeated serial position sampling during the burst. Frame count and projection
+filenames follow the original slice settings. The improved bounded speed
+calibration and cleanup remain; a missed calibration tolerance warns and continues.
+Optimized mode and the explicit pre-accelerated Python API remain available.
+
 For a long recording at one position, choose **Options > Presets > Single position, 24 h** in Record.
 It uses the current microscope position and keeps your selected mode and Z scan
 settings. Adjust `minimum_duration_hours` in **repetition** for another duration.
@@ -94,6 +101,8 @@ maintenance operation, with the original process-reset behaviour.
 
 Both serial command paths assemble complete CR-terminated replies before parsing,
 ignore malformed frames within their timeout, and report missing replies clearly.
+Missing setter acknowledgements warn and return as in the original software;
+normal movement/status checks still run. Required typed read replies must be valid.
 Repeated replies do not count as answers to other commands. Stage motion commands
 are never resent automatically after a timeout.
 
@@ -109,3 +118,6 @@ using monochrome desktop icons. The original Record uses `Config-old.txt` so its
 settings do not replace the current app's `Config.txt`. The original code does not
 include the newer recovery fixes. `tools/install_legacy_shortcuts.ps1` recreates
 these shortcuts for a verified original installation and interpreter.
+
+The [recording interruption audit](recording-interruption-audit.md) distinguishes
+the reported parser crash from operator interrupts during calculation/writing.

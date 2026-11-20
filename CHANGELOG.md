@@ -1,5 +1,16 @@
 # Change log
 
+## 2026-11-20 - Restore normal recording behavior
+
+- Restore normal projections to the original continuous-stack path. Keep optimized
+  and explicitly requested pre-accelerated acquisition available.
+- Restore pixel-only camera bursts for normal stacks, removing the added dependency
+  on timestamp chunks and a post-capture frame-rate query.
+- Restore original missing setter-acknowledgement behavior with a warning, retaining
+  status reads, controller errors, complete serial framing, and no automatic replay.
+- Verify real TIFF writes/readback, pixel values, index maps, metadata, and write-error
+  reporting with simulated acquisition. Document the causes of recent tracebacks.
+
 ## 2026-11-19 - Simpler Record and interruption audit
 
 - Preserve the original settings-left/text-right Record layout and top action buttons.
